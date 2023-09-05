@@ -121,6 +121,73 @@ enum MapPoint {
     Empty,
 }
 
+impl MapPoint {
+    fn check_if_runway(self) -> bool {
+        match self {
+            MapPoint::Runway(_) => true,
+            _ => false,
+        }
+    }
+
+    fn check_if_gate_taxi_line(self) -> bool {
+        match self {
+            MapPoint::GateTaxiLine(_) => true,
+            _ => false,
+        }
+    }
+
+    fn check_for_gate_taxi_line(
+        self,
+        map: &Map,
+        position: (usize, usize),
+        gate: &str,
+        direction: Direction,
+    ) -> bool {
+        // Search all directions for a gate taxi line
+        if direction
+            .to_owned()
+            .fetch_mappoint(map, position)
+            .check_if_gate_taxi_line()
+        {
+            let new_pos = direction.to_owned().go(position);
+            return self.check_for_gate_taxi_line(map, new_pos, gate, direction);
+        } else if direction.fetch_mappoint(map, position).check_if_gate(gate) {
+            return true;
+        }
+        false
+    }
+
+    fn check_for_gate_taxi_line_all_directions(
+        self,
+        map: &Map,
+        position: (usize, usize),
+        gate: &str,
+    ) -> (bool, Direction) {
+        let directions = vec![
+            Direction::North,
+            Direction::South,
+            Direction::East,
+            Direction::West,
+        ];
+        for direction in directions {
+            if self
+                .to_owned()
+                .check_for_gate_taxi_line(map, position, gate, direction.to_owned())
+            {
+                return (true, direction);
+            }
+        }
+        (false, Direction::StayPut)
+    }
+
+    fn check_if_gate(self, gate: &str) -> bool {
+        match self {
+            MapPoint::Gate(number) => number == gate,
+            _ => false,
+        }
+    }
+}
+
 struct Map {
     length: usize,
     width: usize,
@@ -305,9 +372,7 @@ fn update_aircraft_position(airport: &mut Airport) {
                         plane_dir = Direction::West;
                         plane_dir.to_owned().go(plane.position)
                     }
-                    Direction::North => todo!(),
-                    Direction::South => todo!(),
-                    Direction::StayPut => todo!(),
+                    Direction::North | Direction::South | Direction::StayPut => todo!(),
                 };
                 plane.position = pos;
 
@@ -337,34 +402,61 @@ fn update_aircraft_position(airport: &mut Airport) {
                         }
                         pos
                     }
-                    Direction::North => todo!(),
-                    Direction::South => todo!(),
-                    Direction::StayPut => todo!(),
+                    Direction::North | Direction::South | Direction::StayPut => todo!(),
                 };
                 plane.position = pos;
+            }
+            Action::TaxiToGate(gate) => {
+                // Check if the plane is standing at the end of the runway
+                if airport.map.map[plane.position.0][plane.position.1]
+                    .clone()
+                    .check_if_runway()
+                    && plane
+                        .runway
+                        .side
+                        .clone()
+                        .fetch_mappoint(&airport.map, plane.position)
+                        == MapPoint::Empty
+                {
+                    // Change position from runway to taxiway
+                    let point = airport.map.map[plane.position.0][plane.position.1].clone();
+                    let taxiway_dir = match point {
+                        MapPoint::Runway((_, dir)) => dir,
+                        _ => panic!("Plane is not standing on a runway"),
+                    };
+                    plane.position = taxiway_dir.go(plane.position);
+                    continue;
+                }
+                // Check if there is a GateTaxiLine in any direction surrounding the current direction
+                let (is_nearby_gate, gate_dir) = airport.map.map[plane.position.0]
+                    [plane.position.1]
+                    .clone()
+                    .check_for_gate_taxi_line_all_directions(&airport.map, plane.position, gate);
+
+                if is_nearby_gate {
+                    plane.position = gate_dir.go(plane.position);
+                }
+                // Traverse along the taxiway/gate line
+                else {
+                    let point = airport.map.map[plane.position.0][plane.position.1].clone();
+                    let dir = match point {
+                        MapPoint::Taxiway((_, dir)) => dir,
+                        MapPoint::GateTaxiLine((_, dir)) => dir,
+                        MapPoint::Gate(_) => {
+                            // Change action to AtGate
+                            plane.current_action = Action::AtGate(gate.clone());
+                            Direction::StayPut
+                        }
+                        _ => panic!("Plane is not standing on a taxiway or correct gate"),
+                    };
+                    plane.position = dir.go(plane.position);
+                }
             }
             Action::Takeoff => {}
             Action::HoldPosition => {}
             Action::TaxiOntoRunway => {}
             Action::HoldShort => {}
             Action::TaxiToRunway(_) => {}
-            Action::TaxiToGate(gate) => {
-                // Check if the plane is at the end of the runway
-                // If yes, then go to the taxiway
-
-                // let runway_name = airport.runway.name;
-                // if Direction::StayPut.fetch_mappoint(&airport.map, plane.position)
-                //     == MapPoint::Runway(runway_name)
-                // {
-                //     plane.position =
-                // }
-
-                // Check if the plane is at the taxiway
-                // If yes, then go to the gate
-
-                // Check if the plane is at the gate
-                // If yes, then go to the air bridge
-            }
             Action::Pushback => {}
             Action::AtGate(_) => {}
         }
