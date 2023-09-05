@@ -297,8 +297,9 @@ fn construct_airport() -> Airport {
     let planes = vec![Plane {
         id: 0,
         name: "AA117".to_string(),
-        current_action: Action::TaxiToGate("1".to_string()),
-        position: (5, 34),
+        // current_action: Action::TaxiToGate("1".to_string()),
+        current_action: Action::InAir,
+        position: (5, 0),
         runway: runways["1"].clone(),
     }];
 
@@ -414,15 +415,11 @@ fn update_aircraft_position(airport: &mut Airport) {
             Action::InAir => {
                 let mut plane_dir = Direction::StayPut;
                 let pos = match plane.runway.side {
-                    Direction::West => {
-                        plane_dir = Direction::West;
+                    Direction::West | Direction::East | Direction::North | Direction::South => {
+                        plane_dir = plane.runway.side.clone();
                         plane_dir.to_owned().go(plane.position)
                     }
-                    Direction::East => {
-                        plane_dir = Direction::East;
-                        plane_dir.to_owned().go(plane.position)
-                    }
-                    Direction::North | Direction::South | Direction::StayPut => todo!(),
+                    Direction::StayPut => todo!(),
                 };
                 plane.position = pos;
 
@@ -436,23 +433,16 @@ fn update_aircraft_position(airport: &mut Airport) {
             }
             Action::Land => {
                 let pos = match plane.runway.side {
-                    Direction::West => {
-                        let pos = Direction::West.go(plane.position);
+                    Direction::West | Direction::East | Direction::North | Direction::South => {
+                        let plane_dir = plane.runway.side.clone();
+                        let pos = plane_dir.to_owned().go(plane.position);
                         // Check if plane has reached the end of the runway
-                        if Direction::West.fetch_mappoint(&airport.map, pos) == MapPoint::Empty {
+                        if plane_dir.fetch_mappoint(&airport.map, pos) == MapPoint::Empty {
                             plane.current_action = Action::HoldPosition;
                         }
                         pos
                     }
-                    Direction::East => {
-                        let pos = Direction::East.go(plane.position);
-                        // Check if plane has reached the end of the runway
-                        if Direction::East.fetch_mappoint(&airport.map, pos) == MapPoint::Empty {
-                            plane.current_action = Action::HoldPosition;
-                        }
-                        pos
-                    }
-                    Direction::North | Direction::South | Direction::StayPut => todo!(),
+                    Direction::StayPut => todo!(),
                 };
                 plane.position = pos;
             }
