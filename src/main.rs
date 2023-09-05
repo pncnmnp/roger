@@ -1,7 +1,9 @@
 #![allow(unused)]
 
 use std::{
+    collections::HashMap,
     fs::File,
+    hash::Hash,
     io::{BufRead, BufReader},
     thread,
     time::Duration,
@@ -61,22 +63,25 @@ struct Runway {
 }
 
 impl Runway {
-    pub fn new(map: &Map) -> Vec<Self> {
-        let mut runways: Vec<Runway> = vec![];
+    pub fn new(map: &Map) -> HashMap<String, Self> {
+        let mut runways: HashMap<String, Self> = HashMap::new();
         for (i, row) in map.map.iter().enumerate() {
             for (j, col) in row.iter().enumerate() {
                 if let MapPoint::Runway((name, side)) = col {
                     let mut is_unique = true;
                     for runway in &runways {
-                        if runway.name == *name {
+                        if runways.contains_key(&name.to_string()) {
                             is_unique = false;
                         }
                     }
                     if is_unique {
-                        runways.push(Runway {
-                            name: name.clone(),
-                            side: side.clone(),
-                        });
+                        runways.insert(
+                            name.to_string(),
+                            Runway {
+                                name: name.clone(),
+                                side: side.clone(),
+                            },
+                        );
                     }
                 }
             }
@@ -92,22 +97,25 @@ struct Gate {
 }
 
 impl Gate {
-    pub fn new(map: &Map) -> Vec<Self> {
-        let mut gates: Vec<Gate> = vec![];
+    pub fn new(map: &Map) -> HashMap<String, Self> {
+        let mut gates: HashMap<String, Self> = HashMap::new();
         for (i, row) in map.map.iter().enumerate() {
             for (j, col) in row.iter().enumerate() {
                 if let MapPoint::Gate(number) = col {
                     let mut is_unique = true;
                     for gate in &gates {
-                        if gate.number == *number {
+                        if gates.contains_key(&number.to_string()) {
                             panic!("Duplicate gate number: {}", number);
                         }
                     }
                     if is_unique {
-                        gates.push(Gate {
-                            number: number.clone(),
-                            is_occupied: false,
-                        });
+                        gates.insert(
+                            number.to_string(),
+                            Gate {
+                                number: number.clone(),
+                                is_occupied: false,
+                            },
+                        );
                     }
                 }
             }
@@ -187,7 +195,7 @@ impl MapPoint {
 
     fn check_if_gate(self, gate: &str) -> bool {
         match self {
-            MapPoint::Gate(number) => "G".to_owned() + &number == gate,
+            MapPoint::Gate(number) => number == gate,
             _ => false,
         }
     }
@@ -245,8 +253,8 @@ impl Plane {
 
 #[derive(Debug)]
 struct Airport {
-    runways: Vec<Runway>,
-    gates: Vec<Gate>,
+    runways: HashMap<String, Runway>,
+    gates: HashMap<String, Gate>,
     map: Map,
     weather: WeatherCondition,
     planes: Vec<Plane>,
@@ -289,9 +297,9 @@ fn construct_airport() -> Airport {
     let planes = vec![Plane {
         id: 0,
         name: "AA117".to_string(),
-        current_action: Action::TaxiToGate("G1".to_string()),
+        current_action: Action::TaxiToGate("1".to_string()),
         position: (5, 34),
-        runway: runways[0].clone(),
+        runway: runways["1"].clone(),
     }];
 
     Airport {
@@ -485,6 +493,9 @@ fn update_aircraft_position(airport: &mut Airport) {
                         MapPoint::Taxiway((_, dir)) => dir,
                         MapPoint::GateTaxiLine((_, dir)) => dir,
                         MapPoint::Gate(_) => {
+                            // Gate is now occupied
+                            let at = airport.gates.get_mut(gate).expect("Gate not found");
+                            at.is_occupied = true;
                             // Change action to AtGate
                             plane.current_action = Action::AtGate(gate.clone());
                             Direction::StayPut
