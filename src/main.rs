@@ -1,9 +1,13 @@
+#![allow(unused)]
+
 use std::{
     fs::File,
     io::{BufRead, BufReader},
+    thread,
+    time::Duration,
 };
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 enum Direction {
     North,
     South,
@@ -50,6 +54,7 @@ impl Direction {
     }
 }
 
+#[derive(Debug)]
 struct Runway {
     name: usize,
     side: Direction,
@@ -80,7 +85,7 @@ impl Runway {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Gate {
     number: String,
     is_occupied: bool,
@@ -111,7 +116,7 @@ impl Gate {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 enum MapPoint {
     Runway((usize, Direction)),
     Taxiway((usize, Direction)),
@@ -188,6 +193,7 @@ impl MapPoint {
     }
 }
 
+#[derive(Debug)]
 struct Map {
     length: usize,
     width: usize,
@@ -195,12 +201,14 @@ struct Map {
     map: Vec<Vec<MapPoint>>,
 }
 
+#[derive(Debug)]
 enum WeatherCondition {
     Clear,
     Rain,
     InclementWeather,
 }
 
+#[derive(Debug)]
 enum Action {
     InAir,
     Land,
@@ -214,6 +222,7 @@ enum Action {
     AtGate(String),
 }
 
+#[derive(Debug)]
 struct Plane {
     id: usize,
     name: String,
@@ -234,6 +243,7 @@ impl Plane {
     }
 }
 
+#[derive(Debug)]
 struct Airport {
     runways: Vec<Runway>,
     gates: Vec<Gate>,
@@ -269,7 +279,7 @@ impl Score {
 
 fn construct_airport() -> Airport {
     let spacing = 5;
-    let map_path = "./airport.map";
+    let map_path = "./src/airport.map";
     let map = build_airport_map(map_path, spacing);
 
     let runways = Runway::new(&map);
@@ -303,8 +313,9 @@ fn build_airport_map(map_path: &str, spacing: usize) -> Map {
         .expect("Failed to parse map width");
     let length = map_dimensions
         .split('x')
-        .last()
+        .nth(1)
         .expect("Failed to parse map length")
+        .replace("\n", "")
         .parse::<usize>()
         .expect("Failed to parse map length");
 
@@ -314,6 +325,9 @@ fn build_airport_map(map_path: &str, spacing: usize) -> Map {
     for (y, line) in map_file.lines().enumerate() {
         let line = line.expect("Failed to read line in map");
         for (x, block) in line.split(",").enumerate() {
+            if block == "..." {
+                continue;
+            }
             let point = block.chars().nth(0).expect("Failed to parse MapPoint");
             let name = block.chars().nth(1).expect("Failed to parse Name");
             let dir_info = block.chars().nth(2).expect("Failed to parse Direction");
@@ -507,7 +521,10 @@ fn main() {
     };
 
     loop {
+        // println!("\nAirport is: {:?}\n", airport);
         update_game_state(&mut airport, &time, &scheduling, &score);
         render(&mut airport);
+        // Sleep for a bit
+        thread::sleep(Duration::from_secs(time.step_duration as u64));
     }
 }
