@@ -54,7 +54,7 @@ impl Direction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Runway {
     name: usize,
     side: Direction,
@@ -286,12 +286,20 @@ fn construct_airport() -> Airport {
     let gates = Gate::new(&map);
     let weather = WeatherCondition::Clear;
 
+    let planes = vec![Plane {
+        id: 0,
+        name: "AA117".to_string(),
+        current_action: Action::Land,
+        position: (5, 5),
+        runway: runways[0].clone(),
+    }];
+
     Airport {
         runways,
         gates,
         map,
         weather,
-        planes: vec![],
+        planes,
     }
 }
 
@@ -350,6 +358,25 @@ fn build_airport_map(map_path: &str, spacing: usize) -> Map {
         }
     }
 
+    // Add spacing of MapPoint::Empty on all sides of map rows
+    let mut map = map
+        .iter()
+        .map(|row| {
+            let mut row = row.clone();
+            for _ in 0..spacing {
+                row.insert(0, MapPoint::Empty);
+                row.push(MapPoint::Empty);
+            }
+            row
+        })
+        .collect::<Vec<Vec<MapPoint>>>();
+    // Add spacing num of columns on top and bottom
+    for _ in 0..spacing {
+        let mut row = vec![MapPoint::Empty; width + (spacing * 2)];
+        map.insert(0, row.clone());
+        map.push(row);
+    }
+
     Map {
         length,
         width,
@@ -361,6 +388,7 @@ fn build_airport_map(map_path: &str, spacing: usize) -> Map {
 // Function to update the game state for each time step
 fn update_game_state(airport: &mut Airport, time: &Time, schedule: &Scheduling, score: &Score) {
     // Update aircraft position
+    update_aircraft_position(airport);
     // Detect collisions
     // Signal alerts
     // Handle user input
@@ -379,11 +407,11 @@ fn update_aircraft_position(airport: &mut Airport) {
                 let mut plane_dir = Direction::StayPut;
                 let pos = match plane.runway.side {
                     Direction::West => {
-                        plane_dir = Direction::East;
+                        plane_dir = Direction::West;
                         plane_dir.to_owned().go(plane.position)
                     }
                     Direction::East => {
-                        plane_dir = Direction::West;
+                        plane_dir = Direction::East;
                         plane_dir.to_owned().go(plane.position)
                     }
                     Direction::North | Direction::South | Direction::StayPut => todo!(),
@@ -401,17 +429,17 @@ fn update_aircraft_position(airport: &mut Airport) {
             Action::Land => {
                 let pos = match plane.runway.side {
                     Direction::West => {
-                        let pos = Direction::East.go(plane.position);
+                        let pos = Direction::West.go(plane.position);
                         // Check if plane has reached the end of the runway
-                        if Direction::East.fetch_mappoint(&airport.map, pos) == MapPoint::Empty {
+                        if Direction::West.fetch_mappoint(&airport.map, pos) == MapPoint::Empty {
                             plane.current_action = Action::HoldPosition;
                         }
                         pos
                     }
                     Direction::East => {
-                        let pos = Direction::West.go(plane.position);
+                        let pos = Direction::East.go(plane.position);
                         // Check if plane has reached the end of the runway
-                        if Direction::West.fetch_mappoint(&airport.map, pos) == MapPoint::Empty {
+                        if Direction::East.fetch_mappoint(&airport.map, pos) == MapPoint::Empty {
                             plane.current_action = Action::HoldPosition;
                         }
                         pos
@@ -509,7 +537,7 @@ fn spawn_landing_aircraft(airport: &mut Airport, schedule: &Scheduling) {
 fn main() {
     // Initialize and run your ATC game here
     let mut airport = construct_airport();
-    let time = Time { step_duration: 3 };
+    let time = Time { step_duration: 1 };
     let scheduling = Scheduling {
         landing_interval: 12,
         background_actions_duration: 12,
@@ -521,7 +549,7 @@ fn main() {
     };
 
     loop {
-        // println!("\nAirport is: {:?}\n", airport);
+        println!("\nAirport is: {:?}\n", airport.planes[0]);
         update_game_state(&mut airport, &time, &scheduling, &score);
         render(&mut airport);
         // Sleep for a bit
