@@ -187,7 +187,7 @@ impl MapPoint {
 
     fn check_if_gate(self, gate: &str) -> bool {
         match self {
-            MapPoint::Gate(number) => number == gate,
+            MapPoint::Gate(number) => "G".to_owned() + &number == gate,
             _ => false,
         }
     }
@@ -289,8 +289,8 @@ fn construct_airport() -> Airport {
     let planes = vec![Plane {
         id: 0,
         name: "AA117".to_string(),
-        current_action: Action::Land,
-        position: (5, 5),
+        current_action: Action::TaxiToGate("G1".to_string()),
+        position: (5, 34),
         runway: runways[0].clone(),
     }];
 
@@ -549,7 +549,11 @@ fn main() {
     };
 
     loop {
-        println!("\nAirport is: {:?}\n", airport.planes[0]);
+        println!(
+            "\nAirport is: {:?}, At: {:?}\n",
+            airport.planes[0],
+            airport.map.map[airport.planes[0].position.0][airport.planes[0].position.1]
+        );
         update_game_state(&mut airport, &time, &scheduling, &score);
         render(&mut airport);
         // Sleep for a bit
