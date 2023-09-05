@@ -1,3 +1,8 @@
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+};
+
 #[derive(Clone, PartialEq)]
 enum Direction {
     North,
@@ -32,43 +37,47 @@ impl Direction {
             Direction::StayPut => Direction::StayPut,
         }
     }
+
+    pub fn parse(dir: &char) -> Result<Self, String> {
+        match dir {
+            'N' => Ok(Direction::North),
+            'S' => Ok(Direction::South),
+            'E' => Ok(Direction::East),
+            'W' => Ok(Direction::West),
+            'X' => Ok(Direction::StayPut),
+            _ => Err(format!("Invalid direction: {}", dir)),
+        }
+    }
 }
 
 struct Runway {
     name: usize,
-    length: usize,
     side: Direction,
 }
 
 impl Runway {
-    pub fn new(self) -> Self {
-        Self {
-            name: self.name,
-            length: self.length,
-            side: self.side,
+    pub fn new(map: &Map) -> Vec<Self> {
+        let mut runways: Vec<Runway> = vec![];
+        for (i, row) in map.map.iter().enumerate() {
+            for (j, col) in row.iter().enumerate() {
+                if let MapPoint::Runway((name, side)) = col {
+                    let mut is_unique = true;
+                    for runway in &runways {
+                        if runway.name == *name {
+                            is_unique = false;
+                        }
+                    }
+                    if is_unique {
+                        runways.push(Runway {
+                            name: name.clone(),
+                            side: side.clone(),
+                        });
+                    }
+                }
+            }
         }
+        runways
     }
-}
-
-struct Taxiway {
-    name: usize,
-    length: usize,
-    width: usize,
-}
-
-impl Taxiway {
-    pub fn new(self) -> Self {
-        Self {
-            name: self.name,
-            length: self.length,
-            width: self.width,
-        }
-    }
-}
-
-struct Terminal {
-    name: char,
-    gates: Vec<Gate>,
 }
 
 #[derive(Clone)]
@@ -77,28 +86,28 @@ struct Gate {
     is_occupied: bool,
 }
 
-struct TerminalComplex {
-    num_terms: u8,
-    gates_per_term: usize,
-}
-
-impl TerminalComplex {
-    pub fn new(self) -> Vec<Terminal> {
-        let mut terminals = vec![];
-        for term_num in 0..self.num_terms {
-            let mut terminal = Terminal {
-                name: (term_num + b'A' as u8 - 1) as char,
-                gates: vec![],
-            };
-            for gate_num in 0..self.gates_per_term {
-                terminal.gates.push(Gate {
-                    number: String::from(terminal.name) + &gate_num.to_string(),
-                    is_occupied: false,
-                });
+impl Gate {
+    pub fn new(map: &Map) -> Vec<Self> {
+        let mut gates: Vec<Gate> = vec![];
+        for (i, row) in map.map.iter().enumerate() {
+            for (j, col) in row.iter().enumerate() {
+                if let MapPoint::Gate(number) = col {
+                    let mut is_unique = true;
+                    for gate in &gates {
+                        if gate.number == *number {
+                            panic!("Duplicate gate number: {}", number);
+                        }
+                    }
+                    if is_unique {
+                        gates.push(Gate {
+                            number: number.clone(),
+                            is_occupied: false,
+                        });
+                    }
+                }
             }
-            terminals.push(terminal);
         }
-        terminals
+        gates
     }
 }
 
@@ -108,7 +117,7 @@ enum MapPoint {
     Taxiway((usize, Direction)),
     Gate(String),
     Plane(String),
-    GateTaxiLine,
+    GateTaxiLine((String, Direction)),
     Empty,
 }
 
@@ -133,7 +142,6 @@ enum Action {
     TaxiOntoRunway,
     HoldShort,
     TaxiToRunway(usize),
-    TaxiToTerminal(String),
     TaxiToGate(String),
     Pushback,
     AtGate(String),
@@ -144,6 +152,7 @@ struct Plane {
     name: String,
     current_action: Action,
     position: (usize, usize),
+    runway: Runway,
 }
 
 impl Plane {
@@ -153,14 +162,14 @@ impl Plane {
             name: self.name,
             current_action: self.current_action,
             position: self.position,
+            runway: self.runway,
         }
     }
 }
 
 struct Airport {
-    runway: Runway,
-    taxiway: Taxiway,
-    terminals: Vec<Terminal>,
+    runways: Vec<Runway>,
+    gates: Vec<Gate>,
     map: Map,
     weather: WeatherCondition,
     planes: Vec<Plane>,
@@ -192,92 +201,72 @@ impl Score {
 }
 
 fn construct_airport() -> Airport {
-    let (x, y) = (160, 25);
     let spacing = 5;
+    let map_path = "./airport.map";
+    let map = build_airport_map(map_path, spacing);
 
-    let runway = Runway {
-        name: 1,
-        side: Direction::West,
-        length: 100,
-    };
-    let taxiway = Taxiway {
-        length: 100,
-        width: 100,
-        name: 7,
-    };
-    let terminal_complex = TerminalComplex {
-        num_terms: 2,
-        gates_per_term: 3,
-    };
-    let planes = vec![Plane {
-        id: 1,
-        name: "AA117".to_owned(),
-        current_action: Action::AtGate("A2".to_owned()),
-        position: (0, 0),
-    }];
-
-    let runway = runway.new();
-    let taxiway = taxiway.new();
-    let terminals = terminal_complex.new();
-    let map = build_airport_map(x, y, spacing, &runway, &taxiway, &terminals);
+    let runways = Runway::new(&map);
+    let gates = Gate::new(&map);
     let weather = WeatherCondition::Clear;
 
     Airport {
-        runway,
-        taxiway,
-        terminals,
+        runways,
+        gates,
         map,
         weather,
-        planes,
+        planes: vec![],
     }
 }
 
-fn build_airport_map(
-    length: usize,
-    width: usize,
-    spacing: usize,
-    runway: &Runway,
-    taxiway: &Taxiway,
-    terminals: &Vec<Terminal>,
-) -> Map {
+fn build_airport_map(map_path: &str, spacing: usize) -> Map {
+    // open the map file
+    let map_file = File::open(map_path).expect("Failed to open map file");
+
+    // Get the map dimensions present in the first line of the format "XxY"
+    let mut map_dimensions = String::new();
+    let mut map_file = BufReader::new(map_file);
+    map_file
+        .read_line(&mut map_dimensions)
+        .expect("Failed to read map dimensions");
+    let width = map_dimensions
+        .split('x')
+        .next()
+        .expect("Failed to parse map width")
+        .parse::<usize>()
+        .expect("Failed to parse map width");
+    let length = map_dimensions
+        .split('x')
+        .last()
+        .expect("Failed to parse map length")
+        .parse::<usize>()
+        .expect("Failed to parse map length");
+
     let mut map: Vec<Vec<MapPoint>> = vec![vec![MapPoint::Empty; width]; length];
 
-    let (run_startx, run_starty, run_endx, run_endy) =
-        (spacing, spacing, spacing, runway.length + spacing);
-    for i in run_starty..run_endy {
-        for j in run_startx..run_endx {
-            map[i][j] = MapPoint::Runway((runway.name, runway.side.clone()));
+    // Read the map file line by line and populate the map
+    for (y, line) in map_file.lines().enumerate() {
+        let line = line.expect("Failed to read line in map");
+        for (x, block) in line.split(",").enumerate() {
+            let point = block.chars().nth(0).expect("Failed to parse MapPoint");
+            let name = block.chars().nth(1).expect("Failed to parse Name");
+            let dir_info = block.chars().nth(2).expect("Failed to parse Direction");
+            let direction = Direction::parse(&dir_info).expect("Failed to parse Direction");
+
+            let map_point = match point {
+                'R' => {
+                    let name = name.to_digit(10).expect("Failed to parse Runway Name");
+                    MapPoint::Runway((name as usize, direction))
+                }
+                'T' => {
+                    let name = name.to_digit(10).expect("Failed to parse Taxiway Name");
+                    MapPoint::Taxiway((name as usize, direction))
+                }
+                'M' => MapPoint::GateTaxiLine((name.to_string(), direction)),
+                'G' => MapPoint::Gate(name.to_string()),
+                _ => MapPoint::Empty,
+            };
+            map[y][x] = map_point;
         }
-    }
-    // Connect the runway to the taxiway
-    // TODO: Make this more general
-    map[run_endx][run_endy] = MapPoint::Runway((runway.name, Direction::South));
-
-    let taxiway_side = runway.side.clone().get_opposite_dir();
-    let (taxi_startx, taxi_starty, taxi_endx, taxi_endy) = (
-        taxiway.width + spacing,
-        spacing,
-        taxiway.width + spacing,
-        taxiway.length + spacing,
-    );
-    for i in taxi_starty..taxi_endy {
-        for j in taxi_startx..taxi_endx {
-            map[i][j] = MapPoint::Taxiway((taxiway.name, taxiway_side.clone()));
-        }
-    }
-
-    let term_startx = taxiway.width + (2 * spacing);
-    let gates: Vec<Gate> = terminals
-        .iter()
-        .flat_map(|terminal| terminal.gates.iter())
-        .cloned()
-        .collect();
-    let total_gates = gates.len();
-    let term_spacing = taxiway.length / total_gates;
-
-    for i in 0..total_gates {
-        let y = spacing + (total_gates * term_spacing);
-        map[term_startx][y] = MapPoint::Gate(gates[i].number.clone());
     }
 
     Map {
@@ -307,7 +296,7 @@ fn update_aircraft_position(airport: &mut Airport) {
         match &plane.current_action {
             Action::InAir => {
                 let mut plane_dir = Direction::StayPut;
-                let pos = match airport.runway.side {
+                let pos = match plane.runway.side {
                     Direction::West => {
                         plane_dir = Direction::East;
                         plane_dir.to_owned().go(plane.position)
@@ -323,7 +312,7 @@ fn update_aircraft_position(airport: &mut Airport) {
                 plane.position = pos;
 
                 // Check if plane has reached the start of the runway
-                let runway_name = airport.runway.name;
+                let runway_name = plane.runway.name;
                 if Direction::StayPut.fetch_mappoint(&airport.map, plane.position)
                     == MapPoint::Runway((runway_name, plane_dir))
                 {
@@ -331,7 +320,7 @@ fn update_aircraft_position(airport: &mut Airport) {
                 }
             }
             Action::Land => {
-                let pos = match airport.runway.side {
+                let pos = match plane.runway.side {
                     Direction::West => {
                         let pos = Direction::East.go(plane.position);
                         // Check if plane has reached the end of the runway
@@ -359,7 +348,6 @@ fn update_aircraft_position(airport: &mut Airport) {
             Action::TaxiOntoRunway => {}
             Action::HoldShort => {}
             Action::TaxiToRunway(_) => {}
-            Action::TaxiToTerminal(_) => {}
             Action::TaxiToGate(gate) => {
                 // Check if the plane is at the end of the runway
                 // If yes, then go to the taxiway
