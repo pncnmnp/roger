@@ -626,6 +626,76 @@ fn parse_user_input(
         _ => Action::HoldPosition, // Should never happen
     };
 
+    /*
+        Valid successors for each action:
+        InAir: -
+        Land: -
+        HoldPosition: TaxiToGate (after landing), TaxiToRunway, HoldShort, TaxiOntoRunway
+        Pushback: -
+        TaxiOntoRunway: HoldPosition, HoldShort, Takeoff, TaxiToRunway
+        HoldShort: HoldPosition, TaxiOntoRunway, Takeoff, TaxiToRunway
+        TaxiToRunway: HoldPosition, HoldShort, Takeoff, TaxiOntoRunway
+        TaxiToGate: HoldPosition
+        Takeoff: -
+        AtGate: Pushback
+    */
+    match plane.current_action {
+        Action::InAir => return Err("Not a valid action when plane is in the air".to_string()),
+        Action::Land => return Err("Not a valid action when in the process of landing".to_string()),
+        Action::Takeoff => {
+            return Err("Not a valid action when in the process of landing".to_string())
+        }
+        Action::HoldPosition => match action {
+            Action::TaxiToGate(_)
+            | Action::TaxiToRunway(_)
+            | Action::HoldShort
+            | Action::TaxiOntoRunway => {}
+            _ => {
+                return Err("Not a valid action when holding position".to_string());
+            }
+        },
+        Action::TaxiOntoRunway => match action {
+            Action::HoldPosition
+            | Action::HoldShort
+            | Action::Takeoff
+            | Action::TaxiToRunway(_) => {}
+            _ => {
+                return Err("Not a valid action when taxiing onto runway".to_string());
+            }
+        },
+        Action::HoldShort => match action {
+            Action::HoldPosition
+            | Action::TaxiOntoRunway
+            | Action::Takeoff
+            | Action::TaxiToRunway(_) => {}
+            _ => {
+                return Err("Not a valid action when holding short".to_string());
+            }
+        },
+        Action::TaxiToRunway(_) => match action {
+            Action::HoldPosition | Action::HoldShort | Action::Takeoff | Action::TaxiOntoRunway => {
+            }
+            _ => {
+                return Err("Not a valid action when taxiing to runway".to_string());
+            }
+        },
+        Action::TaxiToGate(_) => match action {
+            Action::HoldPosition => {}
+            _ => {
+                return Err("Not a valid action when taxiing to gate".to_string());
+            }
+        },
+        Action::Pushback => {
+            return Err("Not a valid action when in the process of pushback".to_string())
+        }
+        Action::AtGate(_) => match action {
+            Action::Pushback => {}
+            _ => {
+                return Err("Not a valid action when at gate".to_string());
+            }
+        },
+    }
+
     plane.current_action = action;
 
     Ok(plane)
