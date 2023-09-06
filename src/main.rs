@@ -286,12 +286,6 @@ impl Score {
     }
 }
 
-#[derive(Debug)]
-struct UserInput {
-    action: Action,
-    plane: Plane,
-}
-
 fn construct_airport() -> Airport {
     let spacing = 5;
     let map_path = "./src/airport.map";
@@ -411,16 +405,36 @@ fn update_game_state(
 ) {
     // Update aircraft position
     update_aircraft_position(airport);
+    // Handle user input
+    update_aircraft_from_user_input(airport, receiver);
     // Detect collisions
     // Signal alerts
-    // Handle user input
-    handle_user_input(receiver, &airport.planes, &airport.runways);
     // Update score
     // Update weather
     // Check and spawn new aircraft
 }
 
 fn render(airport: &Airport) {}
+
+fn update_aircraft_from_user_input(airport: &mut Airport, receiver: &Receiver<String>) {
+    let plane = handle_user_input(receiver, &airport.planes, &airport.runways);
+    if plane.is_some() {
+        let keep_aside_fleet = airport.planes.clone();
+        airport.planes = vec![plane.unwrap()];
+        update_aircraft_position(airport);
+        // Restore the fleet but replace the plane that was changed
+        airport.planes = keep_aside_fleet
+            .iter()
+            .map(|p| {
+                if p.id == airport.planes[0].id {
+                    airport.planes[0].to_owned()
+                } else {
+                    p.to_owned()
+                }
+            })
+            .collect::<Vec<Plane>>();
+    }
+}
 
 fn update_aircraft_position(airport: &mut Airport) {
     // Update aircraft position
@@ -530,31 +544,30 @@ fn handle_ground_alerts(airport: &mut Airport, alert: GroundAlert) {
     // Take appropriate actions in response to ground staff alerts
 }
 
-// Function to handle user input and issue commands
 fn handle_user_input(
     receiver: &Receiver<String>,
     planes: &Vec<Plane>,
     runways: &HashMap<String, Runway>,
-) {
+) -> Option<Plane> {
     // Handle user input and issue appropriate commands to aircraft
     if let Ok(user_input) = receiver.try_recv() {
-        let user_input = parse_user_input(user_input, planes, runways);
-        match user_input {
-            Ok(user_input) => {
-                println!("\nUser input: {:?}\n", user_input);
-            }
+        let plane = parse_user_input(user_input, planes, runways);
+        match plane {
+            Ok(plane) => return Some(plane),
             Err(e) => {
                 println!("\nError: {:?}\n", e);
+                return None;
             }
         }
     }
+    None
 }
 
 fn parse_user_input(
     command: String,
     planes: &Vec<Plane>,
     runways: &HashMap<String, Runway>,
-) -> Result<UserInput, String> {
+) -> Result<Plane, String> {
     /*
         Language is:
         l <aircraft> <runway_number>        : Landing at runway X
@@ -613,7 +626,9 @@ fn parse_user_input(
         _ => Action::HoldPosition, // Should never happen
     };
 
-    Ok(UserInput { plane, action })
+    plane.current_action = action;
+
+    Ok(plane)
 }
 
 fn update_score(airport: &mut Airport, score: &Score) {
@@ -648,7 +663,7 @@ fn user_input_thread(sender: std::sync::mpsc::Sender<String>) {
 fn main() {
     // Initialize and run your ATC game here
     let mut airport = construct_airport();
-    let time = Time { step_duration: 5 };
+    let time = Time { step_duration: 1 };
     let scheduling = Scheduling {
         landing_interval: 12,
         background_actions_duration: 12,
@@ -668,11 +683,11 @@ fn main() {
     });
 
     loop {
-        // println!(
-        //     "\nAirport is: {:?}, At: {:?}\n",
-        //     airport.planes[0],
-        //     airport.map.map[airport.planes[0].position.0][airport.planes[0].position.1]
-        // );
+        println!(
+            "\nAirport is: {:?}, At: {:?}\n",
+            airport.planes[0],
+            airport.map.map[airport.planes[0].position.0][airport.planes[0].position.1]
+        );
         update_game_state(&mut airport, &time, &scheduling, &score, &receiver);
         render(&mut airport);
         // Sleep for a bit
