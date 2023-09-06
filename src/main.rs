@@ -1,4 +1,4 @@
-// #![allow(unused)]
+#![allow(unused)]
 
 use std::io;
 use std::sync::mpsc::{channel, Receiver};
@@ -217,7 +217,7 @@ enum WeatherCondition {
     InclementWeather,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Action {
     InAir,
     Land,
@@ -231,7 +231,7 @@ enum Action {
     AtGate(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Plane {
     id: usize,
     name: String,
@@ -286,6 +286,7 @@ impl Score {
     }
 }
 
+#[derive(Debug)]
 struct UserInput {
     action: Action,
     plane: Plane,
@@ -413,7 +414,7 @@ fn update_game_state(
     // Detect collisions
     // Signal alerts
     // Handle user input
-    handle_user_input(receiver);
+    handle_user_input(receiver, &airport.planes, &airport.runways);
     // Update score
     // Update weather
     // Check and spawn new aircraft
@@ -530,11 +531,89 @@ fn handle_ground_alerts(airport: &mut Airport, alert: GroundAlert) {
 }
 
 // Function to handle user input and issue commands
-fn handle_user_input(receiver: &Receiver<String>) {
+fn handle_user_input(
+    receiver: &Receiver<String>,
+    planes: &Vec<Plane>,
+    runways: &HashMap<String, Runway>,
+) {
     // Handle user input and issue appropriate commands to aircraft
     if let Ok(user_input) = receiver.try_recv() {
-        println!("\nSeeing: {:?}\n", user_input);
+        let user_input = parse_user_input(user_input, planes, runways);
+        match user_input {
+            Ok(user_input) => {
+                println!("\nUser input: {:?}\n", user_input);
+            }
+            Err(e) => {
+                println!("\nError: {:?}\n", e);
+            }
+        }
     }
+}
+
+fn parse_user_input(
+    command: String,
+    planes: &Vec<Plane>,
+    runways: &HashMap<String, Runway>,
+) -> Result<UserInput, String> {
+    /*
+        Language is:
+        l <aircraft> <runway_number>        : Landing at runway X
+        t <aircraft> <runway_number>        : Takeoff from runway X
+        hp <aircraft>                       : Hold position
+        p <aircraft>                        : Pushback
+        tor <aircraft> <runway_number>      : Taxi onto runway X
+        hs <aircraft> <runway_number>       : Hold short of runway X
+        t2r <aircraft> <runway_number>      : Taxi to runway X
+        t2g <aircraft> <gate_number>        : Taxi to gate X
+
+        TODO:
+        t2t <aircraft> <terminal_number>    : Taxi to terminal X
+    */
+    let command = command.split_whitespace().collect::<Vec<_>>();
+    if command.len() > 3 || command.len() < 2 {
+        return Err("Wrong user input length.".to_string());
+    }
+    let keyword = command[0];
+    let aircraft = command[1].to_string();
+    let mut plane = planes
+        .iter()
+        .find(|plane| plane.name == aircraft)
+        .ok_or("Plane not found")?
+        .clone();
+
+    let valid_commands = ["hp", "p", "l", "t", "tor", "hs", "t2r", "t2g"];
+    if !valid_commands.contains(&keyword) {
+        return Err("Invalid command: ".to_string() + keyword);
+    }
+    if keyword != "hp" && keyword != "p" && command.len() != 3 {
+        return Err("Must contain a runway/gate/terminal number".to_string());
+    }
+    let mut destination_num = None;
+    if keyword != "hp" && keyword != "p" {
+        destination_num = Some(command[2].to_string());
+        if keyword != "t2g" {
+            // Check if runway exists, and if it does, set the plane's runway
+            if !runways.contains_key(&destination_num.clone().unwrap()) {
+                return Err("Runway not found".to_string());
+            }
+            let runway = runways.get(&destination_num.clone().unwrap()).unwrap();
+            plane.runway = runway.clone();
+        }
+    }
+
+    let action = match keyword {
+        "l" => Action::Land,
+        "t" => Action::Takeoff,
+        "hp" => Action::HoldPosition,
+        "p" => Action::Pushback,
+        "tor" => Action::TaxiOntoRunway,
+        "hs" => Action::HoldShort,
+        "t2r" => Action::TaxiToRunway(destination_num.unwrap().parse::<usize>().unwrap()),
+        "t2g" => Action::TaxiToGate(destination_num.unwrap()),
+        _ => Action::HoldPosition, // Should never happen
+    };
+
+    Ok(UserInput { plane, action })
 }
 
 fn update_score(airport: &mut Airport, score: &Score) {
@@ -569,7 +648,7 @@ fn user_input_thread(sender: std::sync::mpsc::Sender<String>) {
 fn main() {
     // Initialize and run your ATC game here
     let mut airport = construct_airport();
-    let time = Time { step_duration: 1 };
+    let time = Time { step_duration: 5 };
     let scheduling = Scheduling {
         landing_interval: 12,
         background_actions_duration: 12,
@@ -589,11 +668,11 @@ fn main() {
     });
 
     loop {
-        println!(
-            "\nAirport is: {:?}, At: {:?}\n",
-            airport.planes[0],
-            airport.map.map[airport.planes[0].position.0][airport.planes[0].position.1]
-        );
+        // println!(
+        //     "\nAirport is: {:?}, At: {:?}\n",
+        //     airport.planes[0],
+        //     airport.map.map[airport.planes[0].position.0][airport.planes[0].position.1]
+        // );
         update_game_state(&mut airport, &time, &scheduling, &score, &receiver);
         render(&mut airport);
         // Sleep for a bit
