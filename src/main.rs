@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+use enum_iterator::{all, Sequence};
 use std::io;
 use std::sync::mpsc::{channel, Receiver};
 use std::{
@@ -217,6 +218,26 @@ enum WeatherCondition {
     InclementWeather,
 }
 
+#[derive(Debug, Clone, Sequence, PartialEq)]
+enum AtGateAction {
+    ShutdownProcedure,
+    DeboardPassengers,
+    DeboardCargo,
+    UnloadBaggage,
+    UnloadCargo,
+    Refuel,
+    Repair,
+    Clean,
+    LoadCargo,
+    CrewChange,
+    MaintenanceCheck,
+    LoadBaggage,
+    LoadPassengers,
+    BoardPassengers,
+    LoadAdditionalCargo,
+    Standby,
+}
+
 #[derive(Debug, Clone)]
 enum Action {
     InAir,
@@ -228,7 +249,7 @@ enum Action {
     TaxiToRunway(usize),
     TaxiToGate(String),
     Pushback,
-    AtGate(String),
+    AtGate((String, AtGateAction)), // Gate number, wait time
 }
 
 #[derive(Debug, Clone)]
@@ -439,7 +460,7 @@ fn update_aircraft_from_user_input(airport: &mut Airport, receiver: &Receiver<St
 fn update_aircraft_position(airport: &mut Airport) {
     // Update aircraft position
     for plane in airport.planes.iter_mut() {
-        match &plane.current_action {
+        match &mut plane.current_action {
             Action::InAir => {
                 let mut plane_dir = Direction::StayPut;
                 let pos = match plane.runway.side {
@@ -514,8 +535,9 @@ fn update_aircraft_position(airport: &mut Airport) {
                             // Gate is now occupied
                             let at = airport.gates.get_mut(gate).expect("Gate not found");
                             at.is_occupied = true;
-                            // Change action to AtGate
-                            plane.current_action = Action::AtGate(gate.clone());
+                            // Change action to AtGate with wait time 0
+                            plane.current_action =
+                                Action::AtGate((gate.clone(), AtGateAction::ShutdownProcedure));
                             Direction::StayPut
                         }
                         _ => panic!("Plane is not standing on a taxiway or correct gate"),
@@ -529,7 +551,18 @@ fn update_aircraft_position(airport: &mut Airport) {
             Action::HoldShort => {}
             Action::TaxiToRunway(_) => {}
             Action::Pushback => {}
-            Action::AtGate(_) => {}
+            Action::AtGate((gate, ref mut atgate_action)) => {
+                let actions = all::<AtGateAction>().collect::<Vec<_>>();
+                let mut iter = actions.iter();
+                while let Some(action) = iter.next() {
+                    if action.to_owned() == atgate_action.to_owned() {
+                        match iter.next() {
+                            Some(next_action) => *atgate_action = next_action.to_owned(),
+                            None => *atgate_action = AtGateAction::Standby,
+                        }
+                    }
+                }
+            }
         }
     }
 }
