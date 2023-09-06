@@ -1,9 +1,10 @@
-#![allow(unused)]
+// #![allow(unused)]
 
+use std::io;
+use std::sync::mpsc::{channel, Receiver};
 use std::{
     collections::HashMap,
     fs::File,
-    hash::Hash,
     io::{BufRead, BufReader},
     thread,
     time::Duration,
@@ -285,6 +286,11 @@ impl Score {
     }
 }
 
+struct UserInput {
+    action: Action,
+    plane: Plane,
+}
+
 fn construct_airport() -> Airport {
     let spacing = 5;
     let map_path = "./src/airport.map";
@@ -395,12 +401,19 @@ fn build_airport_map(map_path: &str, spacing: usize) -> Map {
 }
 
 // Function to update the game state for each time step
-fn update_game_state(airport: &mut Airport, time: &Time, schedule: &Scheduling, score: &Score) {
+fn update_game_state(
+    airport: &mut Airport,
+    time: &Time,
+    schedule: &Scheduling,
+    score: &Score,
+    receiver: &Receiver<String>,
+) {
     // Update aircraft position
     update_aircraft_position(airport);
     // Detect collisions
     // Signal alerts
     // Handle user input
+    handle_user_input(receiver);
     // Update score
     // Update weather
     // Check and spawn new aircraft
@@ -517,8 +530,11 @@ fn handle_ground_alerts(airport: &mut Airport, alert: GroundAlert) {
 }
 
 // Function to handle user input and issue commands
-fn handle_user_input(airport: &mut Airport, action: Action) {
+fn handle_user_input(receiver: &Receiver<String>) {
     // Handle user input and issue appropriate commands to aircraft
+    if let Ok(user_input) = receiver.try_recv() {
+        println!("\nSeeing: {:?}\n", user_input);
+    }
 }
 
 fn update_score(airport: &mut Airport, score: &Score) {
@@ -532,6 +548,21 @@ fn simulate_weather(airport: &mut Airport, condition: WeatherCondition) {
 
 fn spawn_landing_aircraft(airport: &mut Airport, schedule: &Scheduling) {
     // Spawn new aircraft for landing
+}
+
+fn user_input_thread(sender: std::sync::mpsc::Sender<String>) {
+    loop {
+        let mut user_input = String::new();
+        io::stdin()
+            .read_line(&mut user_input)
+            .expect("Failed to read user input");
+
+        // Trim whitespace and newline characters from the input
+        user_input = user_input.trim().to_string();
+
+        // Send the user input to the main game loop through the channel
+        sender.send(user_input).expect("Failed to send user input");
+    }
 }
 
 // Main function to run the game
@@ -549,13 +580,21 @@ fn main() {
         crash: 0,
     };
 
+    // Channel for communication between threads
+    let (sender, receiver): (std::sync::mpsc::Sender<String>, Receiver<String>) = channel();
+
+    // Separate thread for handling user input
+    std::thread::spawn(move || {
+        user_input_thread(sender);
+    });
+
     loop {
         println!(
             "\nAirport is: {:?}, At: {:?}\n",
             airport.planes[0],
             airport.map.map[airport.planes[0].position.0][airport.planes[0].position.1]
         );
-        update_game_state(&mut airport, &time, &scheduling, &score);
+        update_game_state(&mut airport, &time, &scheduling, &score, &receiver);
         render(&mut airport);
         // Sleep for a bit
         thread::sleep(Duration::from_secs(time.step_duration as u64));
