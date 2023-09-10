@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 use enum_iterator::{all, Sequence};
-use std::io;
+use std::io::{self, stdout, Read, Stdout, Write};
 use std::sync::mpsc::{channel, Receiver};
 use std::{
     collections::HashMap,
@@ -131,7 +131,6 @@ enum MapPoint {
     Runway((usize, Direction)),
     Taxiway((usize, Direction)),
     Gate(String),
-    Plane(String),
     GateTaxiLine((String, Direction)),
     Empty,
 }
@@ -453,9 +452,53 @@ fn update_game_state(
     // Update score
     // Update weather
     // Check and spawn new aircraft
+    render(airport);
 }
 
-fn render(airport: &Airport) {}
+fn render(airport: &Airport) {
+    // Draw the airport map to the screen
+    let mut stdout = stdout();
+    // Move the cursor to the beginning of the terminal
+    stdout.write_all(b"\x1B[1;1H").unwrap();
+    for (col_index, col) in airport.map.map.iter().enumerate() {
+        for (row_index, row) in col.iter().enumerate() {
+            // check if plane is at this point
+            if airport.planes.iter().any(|plane| {
+                plane.position.0 == col_index && plane.position.1 == row_index && !plane.out_of_map
+            }) {
+                stdout.write_all(b"X").unwrap();
+                continue;
+            }
+            let mut pixel = match row {
+                MapPoint::Empty => " ",
+                MapPoint::Runway((_, dir)) => match dir {
+                    Direction::North | Direction::South => "||",
+                    Direction::East | Direction::West => "=",
+                    _ => " ",
+                },
+                MapPoint::Taxiway((_, dir)) => match dir {
+                    Direction::North => "^",
+                    Direction::South => "v",
+                    Direction::East => "<",
+                    Direction::West => ">",
+                    _ => " ",
+                },
+                MapPoint::Gate(name) => name,
+                MapPoint::GateTaxiLine((_, dir)) => match dir {
+                    Direction::North => "^",
+                    Direction::South => "v",
+                    Direction::East => "<",
+                    Direction::West => ">",
+                    _ => " ",
+                },
+            };
+            stdout.write_all(pixel.as_bytes()).unwrap();
+        }
+        stdout.write_all(b"\r\n").unwrap();
+    }
+    // Flush the output buffer to ensure that the output is immediately displayed
+    stdout.flush().unwrap();
+}
 
 fn update_aircraft_from_user_input(airport: &mut Airport, receiver: &Receiver<String>) {
     let plane = handle_user_input(receiver, &airport.planes, &airport.runways);
@@ -884,11 +927,11 @@ fn main() {
     });
 
     loop {
-        println!(
-            "\nAirport is: {:?}, At: {:?}\n",
-            airport.planes[0],
-            airport.map.map[airport.planes[0].position.0][airport.planes[0].position.1]
-        );
+        // println!(
+        //     "\nAirport is: {:?}, At: {:?}\n",
+        //     airport.planes[0],
+        //     airport.map.map[airport.planes[0].position.0][airport.planes[0].position.1]
+        // );
         update_game_state(&mut airport, &time, &scheduling, &score, &receiver);
         render(&mut airport);
         // Sleep for a bit
