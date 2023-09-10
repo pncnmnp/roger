@@ -338,8 +338,8 @@ fn construct_airport() -> Airport {
         id: 0,
         name: "AA117".to_string(),
         // current_action: Action::TaxiToGate("6".to_string()),
-        current_action: Action::Takeoff,
-        position: (5, 9),
+        current_action: Action::InAir,
+        position: (5, 0),
         runway: runways["1"].clone(),
         out_of_map: false,
     }];
@@ -466,7 +466,7 @@ fn render(airport: &Airport) {
             if airport.planes.iter().any(|plane| {
                 plane.position.0 == col_index && plane.position.1 == row_index && !plane.out_of_map
             }) {
-                stdout.write_all(b"X").unwrap();
+                stdout.write_all(b"\xE2\x9C\x88").unwrap();
                 continue;
             }
             let mut pixel = match row {
@@ -479,16 +479,16 @@ fn render(airport: &Airport) {
                 MapPoint::Taxiway((_, dir)) => match dir {
                     Direction::North => "^",
                     Direction::South => "v",
-                    Direction::East => "<",
-                    Direction::West => ">",
+                    Direction::East => ">",
+                    Direction::West => "<",
                     _ => " ",
                 },
                 MapPoint::Gate(name) => name,
                 MapPoint::GateTaxiLine((_, dir)) => match dir {
                     Direction::North => "^",
                     Direction::South => "v",
-                    Direction::East => "<",
-                    Direction::West => ">",
+                    Direction::East => ">",
+                    Direction::West => "<",
                     _ => " ",
                 },
             };
