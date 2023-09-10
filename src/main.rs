@@ -276,6 +276,7 @@ struct Plane {
     current_action: Action,
     position: (usize, usize),
     runway: Runway,
+    out_of_map: bool,
 }
 
 impl Plane {
@@ -286,6 +287,7 @@ impl Plane {
             current_action: self.current_action,
             position: self.position,
             runway: self.runway,
+            out_of_map: self.out_of_map,
         }
     }
 }
@@ -337,9 +339,10 @@ fn construct_airport() -> Airport {
         id: 0,
         name: "AA117".to_string(),
         // current_action: Action::TaxiToGate("6".to_string()),
-        current_action: Action::TaxiOntoRunway,
-        position: (11, 5),
+        current_action: Action::Takeoff,
+        position: (5, 9),
         runway: runways["1"].clone(),
+        out_of_map: false,
     }];
 
     Airport {
@@ -476,7 +479,12 @@ fn update_aircraft_from_user_input(airport: &mut Airport, receiver: &Receiver<St
 
 fn update_aircraft_position(airport: &mut Airport) {
     // Update aircraft position
-    for plane in airport.planes.iter_mut() {
+    for plane in airport
+        .planes
+        .iter_mut()
+        .filter(|p| !p.out_of_map)
+        .into_iter()
+    {
         match &mut plane.current_action {
             Action::InAir => {
                 let mut plane_dir = Direction::StayPut;
@@ -567,7 +575,25 @@ fn update_aircraft_position(airport: &mut Airport) {
                     plane.position = dir.go(plane.position);
                 }
             }
-            Action::Takeoff => {}
+            Action::Takeoff => {
+                // Check if the plane is out of the map
+                if plane.position.0 <= 1
+                    || plane.position.0 >= airport.map.map.len() - 1 as usize
+                    || plane.position.1 <= 1
+                    || plane.position.1 >= airport.map.map[0].len() - 1 as usize
+                {
+                    plane.out_of_map = true;
+                    continue;
+                }
+
+                let point = airport.map.map[plane.position.0][plane.position.1].clone();
+                match point {
+                    MapPoint::Runway((_, _)) | MapPoint::Empty => {
+                        plane.position = plane.runway.side.clone().go(plane.position)
+                    }
+                    _ => panic!("Plane is not standing on a runway"),
+                }
+            }
             Action::HoldPosition => {}
             Action::TaxiOntoRunway => {
                 let point = airport.map.map[plane.position.0][plane.position.1].clone();
