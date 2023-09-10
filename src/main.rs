@@ -452,7 +452,6 @@ fn update_game_state(
     // Update score
     // Update weather
     // Check and spawn new aircraft
-    render(airport);
 }
 
 fn render(airport: &Airport) {
