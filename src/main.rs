@@ -817,7 +817,7 @@ fn parse_user_input(
         Action::InAir => return Err("Not a valid action when plane is in the air".to_string()),
         Action::Land => return Err("Not a valid action when in the process of landing".to_string()),
         Action::Takeoff => {
-            return Err("Not a valid action when in the process of landing".to_string())
+            return Err("Not a valid action when in the process of takeoff".to_string())
         }
         Action::HoldPosition => match action {
             Action::TaxiToGate(_)
