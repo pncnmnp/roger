@@ -337,8 +337,8 @@ fn construct_airport() -> Airport {
         id: 0,
         name: "AA117".to_string(),
         // current_action: Action::TaxiToGate("6".to_string()),
-        current_action: Action::Pushback,
-        position: (15, 28),
+        current_action: Action::HoldShort,
+        position: (11, 28),
         runway: runways["1"].clone(),
     }];
 
@@ -570,7 +570,22 @@ fn update_aircraft_position(airport: &mut Airport) {
             Action::Takeoff => {}
             Action::HoldPosition => {}
             Action::TaxiOntoRunway => {}
-            Action::HoldShort => {}
+            Action::HoldShort => {
+                let point = airport.map.map[plane.position.0][plane.position.1].clone();
+                match point {
+                    MapPoint::Taxiway((_, dir)) => {
+                        match dir
+                            .to_owned()
+                            .fetch_mappoint(&airport.map, plane.position)
+                            .check_if_runway()
+                        {
+                            true => plane.current_action = Action::HoldPosition,
+                            false => plane.position = dir.go(plane.position),
+                        }
+                    }
+                    _ => panic!("Plane is not standing on a taxiway"),
+                }
+            }
             Action::TaxiToRunway(_) => {}
             Action::Pushback => {
                 let mut point = airport.map.map[plane.position.0][plane.position.1].clone();
