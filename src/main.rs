@@ -144,6 +144,13 @@ impl MapPoint {
         }
     }
 
+    fn check_if_taxiway(self) -> bool {
+        match self {
+            MapPoint::Taxiway(_) => true,
+            _ => false,
+        }
+    }
+
     fn check_if_gate_taxi_line(self) -> bool {
         match self {
             MapPoint::GateTaxiLine(_) => true,
@@ -176,7 +183,8 @@ impl MapPoint {
         self,
         map: &Map,
         position: (usize, usize),
-        gate: &str,
+        gate: String,
+        do_not_go_deep: bool,
     ) -> (bool, Direction) {
         let directions = vec![
             Direction::North,
@@ -185,9 +193,18 @@ impl MapPoint {
             Direction::West,
         ];
         for direction in directions {
+            if do_not_go_deep {
+                if direction
+                    .to_owned()
+                    .fetch_mappoint(map, position)
+                    .check_if_gate_taxi_line()
+                {
+                    return (true, direction);
+                }
+            }
             if self
                 .to_owned()
-                .check_for_gate_taxi_line(map, position, gate, direction.to_owned())
+                .check_for_gate_taxi_line(map, position, &gate, direction.to_owned())
             {
                 return (true, direction);
             }
@@ -319,9 +336,9 @@ fn construct_airport() -> Airport {
     let planes = vec![Plane {
         id: 0,
         name: "AA117".to_string(),
-        // current_action: Action::TaxiToGate("1".to_string()),
-        current_action: Action::InAir,
-        position: (5, 0),
+        // current_action: Action::TaxiToGate("6".to_string()),
+        current_action: Action::Pushback,
+        position: (15, 28),
         runway: runways["1"].clone(),
     }];
 
@@ -520,7 +537,12 @@ fn update_aircraft_position(airport: &mut Airport) {
                 let (is_nearby_gate, gate_dir) = airport.map.map[plane.position.0]
                     [plane.position.1]
                     .clone()
-                    .check_for_gate_taxi_line_all_directions(&airport.map, plane.position, gate);
+                    .check_for_gate_taxi_line_all_directions(
+                        &airport.map,
+                        plane.position,
+                        gate.to_string(),
+                        false,
+                    );
 
                 if is_nearby_gate {
                     plane.position = gate_dir.go(plane.position);
@@ -550,7 +572,32 @@ fn update_aircraft_position(airport: &mut Airport) {
             Action::TaxiOntoRunway => {}
             Action::HoldShort => {}
             Action::TaxiToRunway(_) => {}
-            Action::Pushback => {}
+            Action::Pushback => {
+                let mut point = airport.map.map[plane.position.0][plane.position.1].clone();
+                match point {
+                    MapPoint::GateTaxiLine((_, dir)) => {
+                        plane.position = dir.get_opposite_dir().go(plane.position);
+                        point = airport.map.map[plane.position.0][plane.position.1].clone();
+                        if point.check_if_taxiway() {
+                            plane.current_action = Action::HoldPosition;
+                        }
+                    }
+                    MapPoint::Gate(ref gate) => {
+                        let (is_nearby_gate, mut gate_dir) =
+                            point.clone().check_for_gate_taxi_line_all_directions(
+                                &airport.map,
+                                plane.position,
+                                gate.to_string(),
+                                true,
+                            );
+                        match is_nearby_gate {
+                            true => plane.position = gate_dir.go(plane.position),
+                            false => panic!("Plane is not standing near a gate taxi line"),
+                        }
+                    }
+                    _ => panic!("Plane is not standing at a gate or gate taxi line"),
+                };
+            }
             Action::AtGate((gate, ref mut atgate_action)) => {
                 let actions = all::<AtGateAction>().collect::<Vec<_>>();
                 let mut iter = actions.iter();
