@@ -830,10 +830,10 @@ fn parse_user_input(
         return Err("Wrong user input length.".to_string());
     }
     let keyword = command[0];
-    let aircraft = command[1].to_string();
+    let aircraft = command[1].to_string().to_lowercase();
     let mut plane = planes
         .iter()
-        .find(|plane| plane.name == aircraft)
+        .find(|plane| plane.name.to_lowercase() == aircraft)
         .ok_or("Plane not found")?
         .clone();
 
