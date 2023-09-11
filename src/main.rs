@@ -359,7 +359,7 @@ fn construct_airport() -> Airport {
         name: "AA117".to_string(),
         // current_action: Action::TaxiToGate("6".to_string()),
         current_action: Action::InAir,
-        position: (5, 0),
+        position: (0, 0),
         runway: runways["1"].clone(),
         out_of_map: false,
     }];
@@ -443,8 +443,9 @@ fn build_airport_map(map_path: &str, spacing: usize) -> Map {
     // Add spacing num of columns on top and bottom
     for _ in 0..spacing {
         let mut row = vec![MapPoint::Empty; width + (spacing * 2)];
-        map.insert(0, row.clone());
-        map.push(row);
+        // NOTE: Disabling spacing on top and bottom for now
+        // map.insert(0, row.clone());
+        // map.push(row);
     }
 
     Map {
