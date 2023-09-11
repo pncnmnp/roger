@@ -467,23 +467,59 @@ fn update_game_state(
 fn render(airport: &Airport) {
     // Draw the airport map to the screen
     let mut stdout = stdout();
+    // Clear the screen
+    stdout.write_all(b"\x1B[2J").unwrap();
     // Move the cursor to the beginning of the terminal
     stdout.write_all(b"\x1B[1;1H").unwrap();
     for (col_index, col) in airport.map.map.iter().enumerate() {
         for (row_index, row) in col.iter().enumerate() {
             // check if plane is at this point
-            if airport.planes.iter().any(|plane| {
-                plane.position.0 == col_index && plane.position.1 == row_index && !plane.out_of_map
-            }) {
-                stdout.write_all(b"\xE2\x9C\x88").unwrap();
+            let mut plane_rendered = false;
+            for plane in airport.planes.iter() {
+                if plane.position.0 == col_index
+                    && plane.position.1 == row_index
+                    && !plane.out_of_map
+                {
+                    let dir: Direction = match row {
+                        MapPoint::GateTaxiLine((_, dir))
+                        | MapPoint::Runway((_, dir))
+                        | MapPoint::Taxiway((_, dir)) => dir.clone(),
+                        MapPoint::Gate(gate) => {
+                            let point = row.clone();
+                            point
+                                .check_for_gate_taxi_line_all_directions(
+                                    &airport.map,
+                                    (col_index, row_index),
+                                    gate.to_string(),
+                                    true,
+                                )
+                                .1
+                                .get_opposite_dir()
+                        }
+                        MapPoint::Empty => plane.runway.side.clone(),
+                    };
+                    match dir {
+                        Direction::North => stdout.write_all("▲".as_bytes()).unwrap(),
+                        Direction::South => stdout.write_all("▼".as_bytes()).unwrap(),
+                        Direction::East => stdout.write_all("▶".as_bytes()).unwrap(),
+                        Direction::West => stdout.write_all("◀".as_bytes()).unwrap(),
+                        _ => (),
+                    }
+                    plane_rendered = true;
+                }
+            }
+            if plane_rendered {
                 continue;
             }
             let mut pixel = match row {
                 MapPoint::Empty => " ",
-                MapPoint::Runway((_, dir)) => match dir {
-                    Direction::North | Direction::South => "||",
-                    Direction::East | Direction::West => "=",
-                    _ => " ",
+                MapPoint::Runway((usize, dir)) => match usize {
+                    0 => "∥",
+                    _ => match dir {
+                        Direction::North | Direction::South => "∥",
+                        Direction::East | Direction::West => "=",
+                        _ => " ",
+                    },
                 },
                 MapPoint::Taxiway((_, dir)) => match dir {
                     Direction::North => "^",
@@ -493,11 +529,11 @@ fn render(airport: &Airport) {
                     _ => " ",
                 },
                 MapPoint::Gate(name) => name,
-                MapPoint::GateTaxiLine((_, dir)) => match dir {
-                    Direction::North => "^",
-                    Direction::South => "v",
-                    Direction::East => ">",
-                    Direction::West => "<",
+                MapPoint::GateTaxiLine((terminal, dir)) => match dir {
+                    Direction::North => "↑",
+                    Direction::South => "↓",
+                    Direction::East => "→",
+                    Direction::West => "←",
                     _ => " ",
                 },
             };
@@ -505,6 +541,17 @@ fn render(airport: &Airport) {
         }
         stdout.write_all(b"\r\n").unwrap();
     }
+    // Print out the plane information in a table format on the terminal
+    stdout.write_all(b"Planes\r\n").unwrap();
+    stdout.write_all(b"ID\tName\tRunway\tStatus\r\n").unwrap();
+    for plane in airport.planes.iter() {
+        let info = format!(
+            "{}\t{}\t{}\t{:?}",
+            plane.id, plane.name, plane.runway.name, plane.current_action
+        );
+        stdout.write_all(info.as_bytes()).unwrap();
+    }
+    stdout.write_all(b"\r\n").unwrap();
     // Flush the output buffer to ensure that the output is immediately displayed
     stdout.flush().unwrap();
 }
