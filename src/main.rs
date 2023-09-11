@@ -358,8 +358,8 @@ fn construct_airport() -> Airport {
         id: 0,
         name: "AA117".to_string(),
         // current_action: Action::TaxiToGate("6".to_string()),
-        current_action: Action::InAir,
-        position: (0, 0),
+        current_action: Action::HoldPosition,
+        position: (3, 5),
         runway: runways["1"].clone(),
         out_of_map: false,
     }];
@@ -441,11 +441,10 @@ fn build_airport_map(map_path: &str, spacing: usize) -> Map {
         })
         .collect::<Vec<Vec<MapPoint>>>();
     // Add spacing num of columns on top and bottom
-    for _ in 0..spacing {
+    for _ in 0..2 {
         let mut row = vec![MapPoint::Empty; width + (spacing * 2)];
-        // NOTE: Disabling spacing on top and bottom for now
-        // map.insert(0, row.clone());
-        // map.push(row);
+        map.insert(0, row.clone());
+        map.push(row);
     }
 
     Map {
@@ -557,7 +556,7 @@ fn render(airport: &Airport) {
     // Print out the plane information in a table format on the terminal
     stdout.write_all(b"Planes\r\n").unwrap();
     stdout.write_all(b"ID\tName\tRunway\tStatus\r\n").unwrap();
-    for plane in airport.planes.iter() {
+    for plane in airport.planes.iter().filter(|p| !p.out_of_map) {
         let info = format!(
             "{}\t{}\t{}\t{:?}",
             plane.id, plane.name, plane.runway.name, plane.current_action
@@ -731,7 +730,7 @@ fn update_aircraft_position(airport: &mut Airport) {
                 match point {
                     MapPoint::Taxiway((_, dir)) => plane.position = dir.go(plane.position),
                     MapPoint::Runway((name, dir)) => match name {
-                        0 => plane.current_action = Action::HoldPosition,
+                        0 => plane.current_action = Action::TaxiOntoRunway,
                         _ => plane.position = dir.go(plane.position),
                     },
                     _ => panic!("Plane is not standing on a taxiway or runway"),
