@@ -21,6 +21,16 @@ struct Args {
     sim: bool,
 }
 
+// Stores the latest error message
+struct Error {
+    message: String,
+    timer: usize,
+}
+static mut ERROR: Error = Error {
+    message: String::new(),
+    timer: 0,
+};
+
 #[derive(Clone, PartialEq, Debug)]
 enum Direction {
     North,
@@ -462,6 +472,8 @@ fn update_game_state(
     // Update score
     // Update weather
     // Check and spawn new aircraft
+    // Render the airport
+    render(airport);
 }
 
 fn render(airport: &Airport) {
@@ -551,28 +563,47 @@ fn render(airport: &Airport) {
         );
         stdout.write_all(info.as_bytes()).unwrap();
     }
-    stdout.write_all(b"\r\n").unwrap();
+    stdout.write_all(b"\r\n\n").unwrap();
+
+    // Print out the latest error message
+    if unsafe { ERROR.timer } > 0 {
+        stdout
+            .write_all(unsafe { ERROR.message.as_bytes() })
+            .unwrap();
+        unsafe { ERROR.timer -= 1 };
+        stdout.write_all(b"\r\n").unwrap();
+    }
+
     // Flush the output buffer to ensure that the output is immediately displayed
     stdout.flush().unwrap();
 }
 
 fn update_aircraft_from_user_input(airport: &mut Airport, receiver: &Receiver<String>) {
-    let plane = handle_user_input(receiver, &airport.planes, &airport.runways);
-    if plane.is_some() {
-        let keep_aside_fleet = airport.planes.clone();
-        airport.planes = vec![plane.unwrap()];
-        update_aircraft_position(airport);
-        // Restore the fleet but replace the plane that was changed
-        airport.planes = keep_aside_fleet
-            .iter()
-            .map(|p| {
-                if p.id == airport.planes[0].id {
-                    airport.planes[0].to_owned()
-                } else {
-                    p.to_owned()
+    if let Ok(user_input) = receiver.try_recv() {
+        let plane = parse_user_input(user_input, &airport.planes, &airport.runways);
+        if plane.is_ok() {
+            let keep_aside_fleet = airport.planes.clone();
+            airport.planes = vec![plane.unwrap()];
+            update_aircraft_position(airport);
+            // Restore the fleet but replace the plane that was changed
+            airport.planes = keep_aside_fleet
+                .iter()
+                .map(|p| {
+                    if p.id == airport.planes[0].id {
+                        airport.planes[0].to_owned()
+                    } else {
+                        p.to_owned()
+                    }
+                })
+                .collect::<Vec<Plane>>();
+        } else if plane.is_err() {
+            unsafe {
+                ERROR = Error {
+                    message: plane.err().unwrap(),
+                    timer: 5,
                 }
-            })
-            .collect::<Vec<Plane>>();
+            };
+        }
     }
 }
 
@@ -772,25 +803,6 @@ fn detect_and_handle_collisions(airport: &mut Airport) {
 // Function to handle ground staff alerts
 fn handle_ground_alerts(airport: &mut Airport, alert: GroundAlert) {
     // Take appropriate actions in response to ground staff alerts
-}
-
-fn handle_user_input(
-    receiver: &Receiver<String>,
-    planes: &Vec<Plane>,
-    runways: &HashMap<String, Runway>,
-) -> Option<Plane> {
-    // Handle user input and issue appropriate commands to aircraft
-    if let Ok(user_input) = receiver.try_recv() {
-        let plane = parse_user_input(user_input, planes, runways);
-        match plane {
-            Ok(plane) => return Some(plane),
-            Err(e) => {
-                println!("\nError: {:?}\n", e);
-                return None;
-            }
-        }
-    }
-    None
 }
 
 fn parse_user_input(
@@ -1010,7 +1022,6 @@ fn main() {
         //     airport.map.map[airport.planes[0].position.0][airport.planes[0].position.1]
         // );
         update_game_state(&mut airport, &time, &scheduling, &score, &receiver);
-        render(&mut airport);
         // Sleep for a bit
         thread::sleep(Duration::from_secs(time.step_duration as u64));
     }
