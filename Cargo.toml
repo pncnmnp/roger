@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 enum-iterator = "1.4.1"
-crossterm = "0.26.1"
+clap = { version = "4.4.2", features = ["derive"] }

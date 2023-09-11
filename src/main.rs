@@ -1,7 +1,9 @@
 #![allow(unused)]
 
+use clap::{ArgAction, Parser};
 use enum_iterator::{all, Sequence};
 use std::io::{self, stdout, Read, Stdout, Write};
+use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc::{channel, Receiver};
 use std::{
     collections::HashMap,
@@ -10,6 +12,14 @@ use std::{
     thread,
     time::Duration,
 };
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// ATC command mode or simulation mode
+    #[arg(short, long, action = ArgAction::SetTrue)]
+    sim: bool,
+}
 
 #[derive(Clone, PartialEq, Debug)]
 enum Direction {
@@ -888,9 +898,11 @@ fn spawn_landing_aircraft(airport: &mut Airport, schedule: &Scheduling) {
 }
 
 fn user_input_thread(sender: std::sync::mpsc::Sender<String>) {
+    let stream = TcpStream::connect("localhost:8080").unwrap();
+    let mut reader = BufReader::new(stream);
     loop {
         let mut user_input = String::new();
-        io::stdin()
+        reader
             .read_line(&mut user_input)
             .expect("Failed to read user input");
 
@@ -902,8 +914,27 @@ fn user_input_thread(sender: std::sync::mpsc::Sender<String>) {
     }
 }
 
+fn tcp_listener() {
+    let listener = TcpListener::bind("localhost:8080").expect("Failed to bind address");
+    for stream in listener.incoming() {
+        let mut stream = stream.unwrap();
+        let stdin = io::stdin();
+        for line in stdin.lock().lines() {
+            let line = line.unwrap();
+            stream.write(line.as_bytes()).unwrap();
+            stream.write(b"\n").unwrap();
+            stream.flush().unwrap();
+        }
+    }
+}
+
 // Main function to run the game
 fn main() {
+    let args = Args::parse();
+    if !args.sim {
+        tcp_listener();
+    }
+
     // Initialize and run your ATC game here
     let mut airport = construct_airport();
     let time = Time { step_duration: 1 };
