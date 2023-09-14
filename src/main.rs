@@ -359,14 +359,13 @@ struct GroundAlert {
 }
 
 struct Score {
-    land: usize,
     takeoff: usize,
     crash: usize,
 }
 
 impl Score {
     pub fn score(self) -> i32 {
-        (self.land + self.takeoff - (100 * self.crash)) as i32
+        (self.takeoff - (100 * self.crash)) as i32
     }
 }
 
@@ -478,7 +477,7 @@ fn update_game_state(
     airport: &mut Airport,
     time: &Time,
     spawn_plane: bool,
-    score: &Score,
+    score: &mut Score,
     receiver: &Receiver<String>,
 ) {
     update_aircraft_position(airport);
@@ -486,20 +485,33 @@ fn update_game_state(
     // Detect collisions
     // Signal alerts
     // Update score
+    update_score(airport, score);
     // Update weather
     if spawn_plane {
         spawn_landing_aircraft(airport);
     }
-    render(airport);
+    render(airport, score);
 }
 
-fn render(airport: &Airport) {
+fn render(airport: &Airport, score: &Score) {
     // Draw the airport map to the screen
     let mut stdout = stdout();
     // Clear the screen
     stdout.write_all(b"\x1B[2J").unwrap();
     // Move the cursor to the beginning of the terminal
     stdout.write_all(b"\x1B[1;1H").unwrap();
+
+    // Print the dashboard
+    stdout
+        .write_all(
+            format!(
+                "Takeoffs: {} \t Weather: {:?}\n",
+                score.takeoff, airport.weather
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+
     for (col_index, col) in airport.map.map.iter().enumerate() {
         for (row_index, row) in col.iter().enumerate() {
             // check if plane is at this point
@@ -938,8 +950,15 @@ fn parse_user_input(
     Ok(plane)
 }
 
-fn update_score(airport: &mut Airport, score: &Score) {
+fn update_score(airport: &mut Airport, score: &mut Score) {
     // Update the score based on the current game state
+    let mut num_takeoffs = 0;
+    for plane in airport.planes.iter() {
+        if plane.out_of_map {
+            num_takeoffs += 1;
+        }
+    }
+    score.takeoff = num_takeoffs;
 }
 
 // Function to simulate weather conditions
@@ -1012,8 +1031,7 @@ fn main() {
     let mut airport = construct_airport();
     let time: Time = Time { step_duration: 1 };
     const LANDING_INTERVAL: usize = 60;
-    let score = Score {
-        land: 0,
+    let mut score = Score {
         takeoff: 0,
         crash: 0,
     };
@@ -1029,7 +1047,7 @@ fn main() {
     let mut timer: usize = 0;
     loop {
         let spawn_plane = timer % LANDING_INTERVAL == 0;
-        update_game_state(&mut airport, &time, spawn_plane, &score, &receiver);
+        update_game_state(&mut airport, &time, spawn_plane, &mut score, &receiver);
         // Sleep for a bit
         thread::sleep(Duration::from_secs(time.step_duration as u64));
         timer += 1;

@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 enum-iterator = "1.4.1"
 clap = { version = "4.4.2", features = ["derive"] }
+lazy_static = "1.4.0"
+rand = "0.8.5"
