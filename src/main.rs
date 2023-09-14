@@ -484,9 +484,8 @@ fn update_game_state(
     update_aircraft_from_user_input(airport, receiver);
     // Detect collisions
     // Signal alerts
-    // Update score
     update_score(airport, score);
-    // Update weather
+    simulate_weather(airport);
     if spawn_plane {
         spawn_landing_aircraft(airport);
     }
@@ -962,8 +961,33 @@ fn update_score(airport: &mut Airport, score: &mut Score) {
 }
 
 // Function to simulate weather conditions
-fn simulate_weather(airport: &mut Airport, condition: WeatherCondition) {
-    // Simulate the impact of weather conditions on aircraft operations
+fn simulate_weather(airport: &mut Airport) {
+    let mut rng = rand::thread_rng();
+    airport.weather = match airport.weather {
+        WeatherCondition::Clear => {
+            if rng.gen_range(0..300) <= 1 {
+                WeatherCondition::Rain
+            } else if rng.gen_range(0..1000) <= 1 {
+                WeatherCondition::InclementWeather
+            } else {
+                WeatherCondition::Clear
+            }
+        }
+        WeatherCondition::Rain => {
+            if rng.gen_range(0..100) < 95 {
+                WeatherCondition::Rain
+            } else {
+                WeatherCondition::Clear
+            }
+        }
+        WeatherCondition::InclementWeather => {
+            if rng.gen_range(0..100) < 95 {
+                WeatherCondition::InclementWeather
+            } else {
+                WeatherCondition::Clear
+            }
+        }
+    };
 }
 
 fn spawn_landing_aircraft(airport: &mut Airport) {
