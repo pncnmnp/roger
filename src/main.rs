@@ -11,14 +11,13 @@ use objc::{msg_send, sel, sel_impl};
 
 use clap::{ArgAction, Parser};
 use enum_iterator::{all, Sequence};
-use lazy_static::lazy::Lazy;
 use lazy_static::lazy_static;
 use rand::Rng;
-use std::io::{self, stdout, Read, Stdout, Write};
+use std::io::{self, stdout, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::{
     collections::HashMap,
     fs::File,
