@@ -2,12 +2,14 @@
 
 use clap::{ArgAction, Parser};
 use enum_iterator::{all, Sequence};
+use lazy_static::lazy::Lazy;
 use lazy_static::lazy_static;
+use rand::Rng;
 use std::io::{self, stdout, Read, Stdout, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::{
     collections::HashMap,
     fs::File,
@@ -322,6 +324,24 @@ impl Plane {
     }
 }
 
+lazy_static! {
+    static ref AIRWAY_IDS: HashMap<&'static str, &'static str> = {
+        let mut map = HashMap::new();
+        map.insert("AA", "American Airlines");
+        map.insert("DL", "Delta Air Lines");
+        map.insert("UA", "United Airlines");
+        map.insert("BA", "British Airways");
+        map.insert("AF", "Air France");
+        map.insert("LH", "Lufthansa");
+        map.insert("EK", "Emirates");
+        map.insert("QF", "Qantas");
+        map.insert("AS", "Alaska Airlines");
+        map.insert("WN", "Southwest Airlines");
+        map.insert("AI", "Air India");
+        map
+    };
+}
+
 #[derive(Debug)]
 struct Airport {
     runways: HashMap<String, Runway>,
@@ -337,11 +357,6 @@ struct Time {
 
 struct GroundAlert {
     message: String,
-}
-
-struct Scheduling {
-    landing_interval: usize,            // Interval for planes landing in steps
-    background_actions_duration: usize, // Duration in steps for background actions
 }
 
 struct Score {
@@ -368,22 +383,12 @@ fn construct_airport() -> Airport {
     let gates = Gate::new(&map);
     let weather = WeatherCondition::Clear;
 
-    let planes = vec![Plane {
-        id: 0,
-        name: "AA117".to_string(),
-        // current_action: Action::TaxiToGate("6".to_string()),
-        current_action: Action::InAir,
-        position: (spacing.top_bottom, 0),
-        runway: runways["1"].clone(),
-        out_of_map: false,
-    }];
-
     Airport {
         runways,
         gates,
         map,
         weather,
-        planes,
+        planes: vec![],
     }
 }
 
@@ -473,7 +478,7 @@ fn build_airport_map(map_path: &str, spacing: Spacing) -> Map {
 fn update_game_state(
     airport: &mut Airport,
     time: &Time,
-    schedule: &Scheduling,
+    spawn_plane: bool,
     score: &Score,
     receiver: &Receiver<String>,
 ) {
@@ -486,6 +491,9 @@ fn update_game_state(
     // Update score
     // Update weather
     // Check and spawn new aircraft
+    if spawn_plane {
+        spawn_landing_aircraft(airport);
+    }
     // Render the airport
     render(airport);
 }
@@ -572,7 +580,7 @@ fn render(airport: &Airport) {
     stdout.write_all(b"ID\tName\tRunway\tStatus\r\n").unwrap();
     for plane in airport.planes.iter().filter(|p| !p.out_of_map) {
         let info = format!(
-            "{}\t{}\t{}\t{:?}",
+            "{}\t{}\t{}\t{:?}\n",
             plane.id, plane.name, plane.runway.name, plane.current_action
         );
         stdout.write_all(info.as_bytes()).unwrap();
@@ -964,8 +972,27 @@ fn simulate_weather(airport: &mut Airport, condition: WeatherCondition) {
     // Simulate the impact of weather conditions on aircraft operations
 }
 
-fn spawn_landing_aircraft(airport: &mut Airport, schedule: &Scheduling) {
+fn spawn_landing_aircraft(airport: &mut Airport) {
     // Spawn new aircraft for landing
+    let spacing = &airport.map.spacing;
+    let runways = &airport.runways;
+    let num_planes = airport.planes.len();
+
+    let mut rng = rand::thread_rng();
+    let airway_ids: Vec<_> = AIRWAY_IDS.keys().cloned().collect();
+    let plane_name = airway_ids[rng.gen_range(0..airway_ids.len())].to_string()
+        + &rng.gen_range(100..400).to_string();
+
+    let plane = Plane {
+        id: num_planes + 1,
+        name: plane_name,
+        current_action: Action::InAir,
+        position: (spacing.top_bottom, 0),
+        runway: runways["1"].clone(),
+        out_of_map: false,
+    };
+
+    airport.planes.push(plane);
 }
 
 fn user_input_thread(sender: std::sync::mpsc::Sender<String>) {
@@ -1008,11 +1035,8 @@ fn main() {
 
     // Initialize and run your ATC game here
     let mut airport = construct_airport();
-    let time = Time { step_duration: 1 };
-    let scheduling = Scheduling {
-        landing_interval: 12,
-        background_actions_duration: 12,
-    };
+    let time: Time = Time { step_duration: 1 };
+    const LANDING_INTERVAL: usize = 60;
     let score = Score {
         land: 0,
         takeoff: 0,
@@ -1027,14 +1051,12 @@ fn main() {
         user_input_thread(sender);
     });
 
+    let mut timer: usize = 0;
     loop {
-        // println!(
-        //     "\nAirport is: {:?}, At: {:?}\n",
-        //     airport.planes[0],
-        //     airport.map.map[airport.planes[0].position.0][airport.planes[0].position.1]
-        // );
-        update_game_state(&mut airport, &time, &scheduling, &score, &receiver);
+        let spawn_plane = timer % LANDING_INTERVAL == 0;
+        update_game_state(&mut airport, &time, spawn_plane, &score, &receiver);
         // Sleep for a bit
         thread::sleep(Duration::from_secs(time.step_duration as u64));
+        timer += 1;
     }
 }
