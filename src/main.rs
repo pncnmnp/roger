@@ -293,9 +293,8 @@ enum Action {
     Land,
     Takeoff,
     HoldPosition,
-    TaxiOntoRunway,
+    TaxiOntoRunway(usize),
     HoldShort,
-    TaxiToRunway(usize),
     TaxiToGate(String),
     Pushback,
     AtGate((String, AtGateAction)), // Gate number, wait time
@@ -741,12 +740,12 @@ fn update_aircraft_position(airport: &mut Airport) {
                 }
             }
             Action::HoldPosition => {}
-            Action::TaxiOntoRunway => {
+            Action::TaxiOntoRunway(_) => {
                 let point = airport.map.map[plane.position.0][plane.position.1].clone();
                 match point {
                     MapPoint::Taxiway((_, dir)) => plane.position = dir.go(plane.position),
                     MapPoint::Runway((name, dir)) => match name {
-                        0 => plane.current_action = Action::TaxiOntoRunway,
+                        0 => plane.current_action = Action::TaxiOntoRunway(name),
                         _ => plane.position = dir.go(plane.position),
                     },
                     _ => panic!("Plane is not standing on a taxiway or runway"),
@@ -768,7 +767,6 @@ fn update_aircraft_position(airport: &mut Airport) {
                     _ => panic!("Plane is not standing on a taxiway"),
                 }
             }
-            Action::TaxiToRunway(_) => {}
             Action::Pushback => {
                 let mut point = airport.map.map[plane.position.0][plane.position.1].clone();
                 match point {
@@ -834,7 +832,6 @@ fn parse_user_input(
         p <aircraft>                        : Pushback
         tor <aircraft> <runway_number>      : Taxi onto runway X
         hs <aircraft> <runway_number>       : Hold short of runway X
-        t2r <aircraft> <runway_number>      : Taxi to runway X
         t2g <aircraft> <gate_number>        : Taxi to gate X
 
         TODO:
@@ -877,9 +874,8 @@ fn parse_user_input(
         "t" => Action::Takeoff,
         "hp" => Action::HoldPosition,
         "p" => Action::Pushback,
-        "tor" => Action::TaxiOntoRunway,
+        "tor" => Action::TaxiOntoRunway(destination_num.unwrap().parse::<usize>().unwrap()),
         "hs" => Action::HoldShort,
-        "t2r" => Action::TaxiToRunway(destination_num.unwrap().parse::<usize>().unwrap()),
         "t2g" => Action::TaxiToGate(destination_num.unwrap()),
         _ => Action::HoldPosition, // Should never happen
     };
@@ -892,7 +888,6 @@ fn parse_user_input(
         Pushback: -
         TaxiOntoRunway: HoldPosition, HoldShort, Takeoff, TaxiToRunway
         HoldShort: HoldPosition, TaxiOntoRunway, Takeoff, TaxiToRunway
-        TaxiToRunway: HoldPosition, HoldShort, Takeoff, TaxiOntoRunway
         TaxiToGate: HoldPosition
         Takeoff: -
         AtGate: Pushback
@@ -904,37 +899,21 @@ fn parse_user_input(
             return Err("Not a valid action when in the process of takeoff".to_string())
         }
         Action::HoldPosition => match action {
-            Action::TaxiToGate(_)
-            | Action::TaxiToRunway(_)
-            | Action::HoldShort
-            | Action::TaxiOntoRunway => {}
+            Action::TaxiToGate(_) | Action::HoldShort | Action::TaxiOntoRunway(_) => {}
             _ => {
                 return Err("Not a valid action when holding position".to_string());
             }
         },
-        Action::TaxiOntoRunway => match action {
-            Action::HoldPosition
-            | Action::HoldShort
-            | Action::Takeoff
-            | Action::TaxiToRunway(_) => {}
+        Action::TaxiOntoRunway(_) => match action {
+            Action::HoldPosition | Action::HoldShort | Action::Takeoff => {}
             _ => {
                 return Err("Not a valid action when taxiing onto runway".to_string());
             }
         },
         Action::HoldShort => match action {
-            Action::HoldPosition
-            | Action::TaxiOntoRunway
-            | Action::Takeoff
-            | Action::TaxiToRunway(_) => {}
+            Action::HoldPosition | Action::TaxiOntoRunway(_) | Action::Takeoff => {}
             _ => {
                 return Err("Not a valid action when holding short".to_string());
-            }
-        },
-        Action::TaxiToRunway(_) => match action {
-            Action::HoldPosition | Action::HoldShort | Action::Takeoff | Action::TaxiOntoRunway => {
-            }
-            _ => {
-                return Err("Not a valid action when taxiing to runway".to_string());
             }
         },
         Action::TaxiToGate(_) => match action {
