@@ -482,19 +482,15 @@ fn update_game_state(
     score: &Score,
     receiver: &Receiver<String>,
 ) {
-    // Update aircraft position
     update_aircraft_position(airport);
-    // Handle user input
     update_aircraft_from_user_input(airport, receiver);
     // Detect collisions
     // Signal alerts
     // Update score
     // Update weather
-    // Check and spawn new aircraft
     if spawn_plane {
         spawn_landing_aircraft(airport);
     }
-    // Render the airport
     render(airport);
 }
 
