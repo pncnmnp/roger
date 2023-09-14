@@ -2,9 +2,12 @@
 
 use clap::{ArgAction, Parser};
 use enum_iterator::{all, Sequence};
+use lazy_static::lazy_static;
 use std::io::{self, stdout, Read, Stdout, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver};
+use std::sync::Mutex;
 use std::{
     collections::HashMap,
     fs::File,
@@ -24,12 +27,14 @@ struct Args {
 // Stores the latest error message
 struct Error {
     message: String,
-    timer: usize,
+    timer: AtomicUsize,
 }
-static mut ERROR: Error = Error {
-    message: String::new(),
-    timer: 0,
-};
+lazy_static! {
+    static ref ERROR: Mutex<Error> = Mutex::new(Error {
+        message: String::new(),
+        timer: AtomicUsize::new(0),
+    });
+}
 
 #[derive(Clone, PartialEq, Debug)]
 enum Direction {
@@ -575,12 +580,12 @@ fn render(airport: &Airport) {
     stdout.write_all(b"\r\n\n").unwrap();
 
     // Print out the latest error message
-    if unsafe { ERROR.timer } > 0 {
-        stdout
-            .write_all(unsafe { ERROR.message.as_bytes() })
-            .unwrap();
-        unsafe { ERROR.timer -= 1 };
-        stdout.write_all(b"\r\n").unwrap();
+    if let Ok(mut error) = ERROR.lock() {
+        if error.timer.load(Ordering::SeqCst) > 0 {
+            stdout.write_all(error.message.as_bytes()).unwrap();
+            error.timer.fetch_sub(1, Ordering::SeqCst);
+            stdout.write_all(b"\r\n").unwrap();
+        }
     }
 
     // Flush the output buffer to ensure that the output is immediately displayed
@@ -606,12 +611,10 @@ fn update_aircraft_from_user_input(airport: &mut Airport, receiver: &Receiver<St
                 })
                 .collect::<Vec<Plane>>();
         } else if plane.is_err() {
-            unsafe {
-                ERROR = Error {
-                    message: plane.err().unwrap(),
-                    timer: 5,
-                }
-            };
+            if let Ok(mut error) = ERROR.lock() {
+                error.message = plane.err().unwrap();
+                error.timer = AtomicUsize::new(5);
+            }
         }
     }
 }
