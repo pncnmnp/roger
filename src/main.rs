@@ -1,5 +1,14 @@
 #![allow(unused)]
 
+#[cfg(target_os = "macos")]
+use cocoa_foundation::base::id;
+use cocoa_foundation::foundation::NSDefaultRunLoopMode;
+#[cfg(target_os = "macos")]
+use cocoa_foundation::foundation::NSRunLoop;
+use objc::class;
+#[cfg(target_os = "macos")]
+use objc::{msg_send, sel, sel_impl};
+
 use clap::{ArgAction, Parser};
 use enum_iterator::{all, Sequence};
 use lazy_static::lazy::Lazy;
@@ -17,6 +26,7 @@ use std::{
     thread,
     time::Duration,
 };
+use tts::*;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -485,9 +495,10 @@ fn update_game_state(
     spawn_plane: bool,
     score: &mut Score,
     receiver: &Receiver<String>,
+    tts: &mut Tts,
 ) {
     update_aircraft_position(airport);
-    update_aircraft_from_user_input(airport, receiver);
+    update_aircraft_from_user_input(airport, receiver, tts);
     // Detect collisions
     // Signal alerts
     update_score(airport, score);
@@ -625,7 +636,11 @@ fn render(airport: &Airport, score: &Score) {
     stdout.flush().unwrap();
 }
 
-fn update_aircraft_from_user_input(airport: &mut Airport, receiver: &Receiver<String>) {
+fn update_aircraft_from_user_input(
+    airport: &mut Airport,
+    receiver: &Receiver<String>,
+    tts: &mut Tts,
+) {
     if let Ok(user_input) = receiver.try_recv() {
         let plane = parse_user_input(user_input, &airport.planes, &airport.runways);
         if plane.is_ok() {
@@ -647,6 +662,16 @@ fn update_aircraft_from_user_input(airport: &mut Airport, receiver: &Receiver<St
 
             // Get the clearance message
             let clearance = create_atc_clearance(&airport, &plane, designation_num);
+            tts.speak(clearance.clone(), false)
+                .expect("Could not speak ATC clearance");
+            #[cfg(target_os = "macos")]
+            {
+                let run_loop: id = unsafe { NSRunLoop::currentRunLoop() };
+                unsafe {
+                    let date: id = msg_send![class!(NSDate), distantFuture];
+                    let _: () = msg_send![run_loop, runMode:NSDefaultRunLoopMode beforeDate:date];
+                }
+            }
             if let Ok(mut atc) = ATC.lock() {
                 atc.message = clearance;
                 atc.timer = AtomicUsize::new(5);
@@ -1150,10 +1175,20 @@ fn main() {
         user_input_thread(sender);
     });
 
+    // TTS
+    let mut tts = Tts::default().expect("Could not initialize TTS");
+
     let mut timer: usize = 0;
     loop {
         let spawn_plane = timer % LANDING_INTERVAL == 0;
-        update_game_state(&mut airport, &time, spawn_plane, &mut score, &receiver);
+        update_game_state(
+            &mut airport,
+            &time,
+            spawn_plane,
+            &mut score,
+            &receiver,
+            &mut tts,
+        );
         // Sleep for a bit
         thread::sleep(Duration::from_secs(time.step_duration as u64));
         timer += 1;
