@@ -27,12 +27,18 @@ struct Args {
 }
 
 // Stores the latest error message
-struct Error {
+struct Message {
     message: String,
     timer: AtomicUsize,
 }
 lazy_static! {
-    static ref ERROR: Mutex<Error> = Mutex::new(Error {
+    static ref ERROR: Mutex<Message> = Mutex::new(Message {
+        message: String::new(),
+        timer: AtomicUsize::new(0),
+    });
+}
+lazy_static! {
+    static ref ATC: Mutex<Message> = Mutex::new(Message {
         message: String::new(),
         timer: AtomicUsize::new(0),
     });
@@ -596,8 +602,21 @@ fn render(airport: &Airport, score: &Score) {
     // Print out the latest error message
     if let Ok(mut error) = ERROR.lock() {
         if error.timer.load(Ordering::SeqCst) > 0 {
-            stdout.write_all(error.message.as_bytes()).unwrap();
+            stdout
+                .write_all(format!("‼  {}", error.message).as_bytes())
+                .unwrap();
             error.timer.fetch_sub(1, Ordering::SeqCst);
+            stdout.write_all(b"\r\n").unwrap();
+        }
+    }
+
+    // Print out the latest clearance message
+    if let Ok(mut clearance) = ATC.lock() {
+        if clearance.timer.load(Ordering::SeqCst) > 0 {
+            stdout
+                .write_all(format!("🎙  {}", clearance.message).as_bytes())
+                .unwrap();
+            clearance.timer.fetch_sub(1, Ordering::SeqCst);
             stdout.write_all(b"\r\n").unwrap();
         }
     }
@@ -611,7 +630,8 @@ fn update_aircraft_from_user_input(airport: &mut Airport, receiver: &Receiver<St
         let plane = parse_user_input(user_input, &airport.planes, &airport.runways);
         if plane.is_ok() {
             let keep_aside_fleet = airport.planes.clone();
-            airport.planes = vec![plane.unwrap()];
+            let (plane, designation_num) = plane.unwrap();
+            airport.planes = vec![plane.clone()];
             update_aircraft_position(airport);
             // Restore the fleet but replace the plane that was changed
             airport.planes = keep_aside_fleet
@@ -624,6 +644,13 @@ fn update_aircraft_from_user_input(airport: &mut Airport, receiver: &Receiver<St
                     }
                 })
                 .collect::<Vec<Plane>>();
+
+            // Get the clearance message
+            let clearance = create_atc_clearance(&airport, &plane, designation_num);
+            if let Ok(mut atc) = ATC.lock() {
+                atc.message = clearance;
+                atc.timer = AtomicUsize::new(5);
+            }
         } else if plane.is_err() {
             if let Ok(mut error) = ERROR.lock() {
                 error.message = plane.err().unwrap();
@@ -834,7 +861,7 @@ fn parse_user_input(
     command: String,
     planes: &Vec<Plane>,
     runways: &HashMap<String, Runway>,
-) -> Result<Plane, String> {
+) -> Result<(Plane, String), String> {
     /*
         Language is:
         l <aircraft> <runway_number>        : Landing at runway X
@@ -885,9 +912,9 @@ fn parse_user_input(
         "t" => Action::Takeoff,
         "hp" => Action::HoldPosition,
         "p" => Action::Pushback,
-        "tor" => Action::TaxiOntoRunway(destination_num.unwrap().parse::<usize>().unwrap()),
+        "tor" => Action::TaxiOntoRunway(destination_num.clone().unwrap().parse::<usize>().unwrap()),
         "hs" => Action::HoldShort,
-        "t2g" => Action::TaxiToGate(destination_num.unwrap()),
+        "t2g" => Action::TaxiToGate(destination_num.clone().unwrap()),
         _ => Action::HoldPosition, // Should never happen
     };
 
@@ -946,7 +973,62 @@ fn parse_user_input(
 
     plane.current_action = action;
 
-    Ok(plane)
+    Ok((plane, destination_num.unwrap_or("0".to_string())))
+}
+
+fn create_atc_clearance(airport: &Airport, plane: &Plane, num: String) -> String {
+    let name = AIRWAY_IDS.get(plane.name.get(..2).unwrap()).unwrap();
+    let code = plane.name.get(2..).unwrap().to_string();
+    let clearance = match plane.current_action {
+        Action::Land => format!(
+            "{} {}, you are cleared to land on runway {}.",
+            name, code, num
+        ),
+        Action::Takeoff => format!(
+            "{} {}, you are cleared for takeoff, runway {}.",
+            name, code, num
+        ),
+        Action::HoldPosition => format!("{} {}, hold position, traffic crossing.", name, code),
+        Action::Pushback => format!(
+            "{} {}, pushback approved, expect runway {} for departure.",
+            name, code, num
+        ),
+        Action::TaxiOntoRunway(_) => {
+            format!("{} {}, taxi directly to runway {}.", name, code, num)
+        }
+        Action::HoldShort => {
+            format!(
+                "{} {}, hold short of runway {} for landing traffic.",
+                name, code, num
+            )
+        }
+        Action::TaxiToGate(_) => {
+            // Find the taxiway closest to the plane's position
+            let point: MapPoint = airport.map.map[plane.position.0][plane.position.1].clone();
+            let taxiway = match point {
+                MapPoint::Taxiway((num, dir)) => num,
+                MapPoint::Runway((_, dir)) => {
+                    let next = dir.go(plane.position);
+                    let next_point = airport.map.map[next.0][next.1].clone();
+                    match next_point {
+                        MapPoint::Taxiway((num, dir)) => num,
+                        _ => 0,
+                    }
+                }
+                _ => 0,
+            };
+            match taxiway {
+                0 => format!("{} {}, taxi to gate {}.", name, code, num),
+                _ => format!(
+                    "{} {}, taxi to gate {} via taxiway {}.",
+                    name, code, num, taxiway
+                ),
+            }
+        }
+        Action::InAir => "".to_string(),
+        Action::AtGate(_) => "".to_string(),
+    };
+    clearance
 }
 
 fn update_score(airport: &mut Airport, score: &mut Score) {
