@@ -600,11 +600,16 @@ fn render(airport: &Airport, score: &Score) {
     }
     // Print out the plane information in a table format on the terminal
     stdout.write_all(b"Planes\r\n").unwrap();
-    stdout.write_all(b"ID\tName\tRunway\tStatus\r\n").unwrap();
+    let header = format!(
+        "{}\t{}\t{}\t{:<30}{}\n",
+        "ID", "Name", "Runway", "Airlines", "Status"
+    );
+    stdout.write_all(header.as_bytes()).unwrap();
     for plane in airport.planes.iter().filter(|p| !p.out_of_map) {
+        let airline = AIRWAY_IDS.get(plane.name.get(..2).unwrap()).unwrap();
         let info = format!(
-            "{}\t{}\t{}\t{:?}\n",
-            plane.id, plane.name, plane.runway.name, plane.current_action
+            "{}\t{}\t{}\t{:<30}{:?}\n",
+            plane.id, plane.name, plane.runway.name, airline, plane.current_action
         );
         stdout.write_all(info.as_bytes()).unwrap();
     }
