@@ -645,7 +645,7 @@ fn update_aircraft_from_user_input(
         let plane = parse_user_input(user_input, &airport.planes, &airport.runways);
         if plane.is_ok() {
             let keep_aside_fleet = airport.planes.clone();
-            let (plane, designation_num) = plane.unwrap();
+            let plane = plane.unwrap();
             airport.planes = vec![plane.clone()];
             update_aircraft_position(airport);
             // Restore the fleet but replace the plane that was changed
@@ -661,7 +661,7 @@ fn update_aircraft_from_user_input(
                 .collect::<Vec<Plane>>();
 
             // Get the clearance message
-            let clearance = create_atc_clearance(&airport, &plane, designation_num);
+            let clearance = create_atc_clearance(&airport, &plane);
             tts.speak(clearance.clone(), false)
                 .expect("Could not speak ATC clearance");
             #[cfg(target_os = "macos")]
@@ -886,7 +886,7 @@ fn parse_user_input(
     command: String,
     planes: &Vec<Plane>,
     runways: &HashMap<String, Runway>,
-) -> Result<(Plane, String), String> {
+) -> Result<Plane, String> {
     /*
         Language is:
         l <aircraft> <runway_number>        : Landing at runway X
@@ -998,36 +998,36 @@ fn parse_user_input(
 
     plane.current_action = action;
 
-    Ok((plane, destination_num.unwrap_or("0".to_string())))
+    Ok(plane)
 }
 
-fn create_atc_clearance(airport: &Airport, plane: &Plane, num: String) -> String {
+fn create_atc_clearance(airport: &Airport, plane: &Plane) -> String {
     let name = AIRWAY_IDS.get(plane.name.get(..2).unwrap()).unwrap();
     let code = plane.name.get(2..).unwrap().to_string();
-    let clearance = match plane.current_action {
+    let clearance = match &plane.current_action {
         Action::Land => format!(
             "{} {}, you are cleared to land on runway {}.",
-            name, code, num
+            name, code, plane.runway.name
         ),
         Action::Takeoff => format!(
             "{} {}, you are cleared for takeoff, runway {}.",
-            name, code, num
+            name, code, plane.runway.name
         ),
         Action::HoldPosition => format!("{} {}, hold position, traffic crossing.", name, code),
         Action::Pushback => format!(
             "{} {}, pushback approved, expect runway {} for departure.",
-            name, code, num
+            name, code, plane.runway.name
         ),
-        Action::TaxiOntoRunway(_) => {
+        Action::TaxiOntoRunway(num) => {
             format!("{} {}, taxi directly to runway {}.", name, code, num)
         }
         Action::HoldShort => {
             format!(
                 "{} {}, hold short of runway {} for landing traffic.",
-                name, code, num
+                name, code, plane.runway.name
             )
         }
-        Action::TaxiToGate(_) => {
+        Action::TaxiToGate(gate) => {
             // Find the taxiway closest to the plane's position
             let point: MapPoint = airport.map.map[plane.position.0][plane.position.1].clone();
             let taxiway = match point {
@@ -1043,10 +1043,13 @@ fn create_atc_clearance(airport: &Airport, plane: &Plane, num: String) -> String
                 _ => 0,
             };
             match taxiway {
-                0 => format!("{} {}, taxi to gate {}.", name, code, num),
+                0 => format!("{} {}, taxi to gate {}.", name, code, gate.clone()),
                 _ => format!(
                     "{} {}, taxi to gate {} via taxiway {}.",
-                    name, code, num, taxiway
+                    name,
+                    code,
+                    gate.clone(),
+                    taxiway
                 ),
             }
         }
