@@ -239,11 +239,17 @@ impl MapPoint {
     }
 }
 
+#[derive(Debug, Clone)]
+struct Spacing {
+    top_bottom: usize,
+    left_right: usize,
+}
+
 #[derive(Debug)]
 struct Map {
     length: usize,
     width: usize,
-    spacing: usize,
+    spacing: Spacing,
     map: Vec<Vec<MapPoint>>,
 }
 
@@ -346,9 +352,12 @@ impl Score {
 }
 
 fn construct_airport() -> Airport {
-    let spacing = 5;
+    let spacing = Spacing {
+        top_bottom: 2,
+        left_right: 5,
+    };
     let map_path = "./src/airport.map";
-    let map = build_airport_map(map_path, spacing);
+    let map = build_airport_map(map_path, spacing.clone());
 
     let runways = Runway::new(&map);
     let gates = Gate::new(&map);
@@ -358,8 +367,8 @@ fn construct_airport() -> Airport {
         id: 0,
         name: "AA117".to_string(),
         // current_action: Action::TaxiToGate("6".to_string()),
-        current_action: Action::HoldPosition,
-        position: (3, 5),
+        current_action: Action::InAir,
+        position: (spacing.top_bottom, 0),
         runway: runways["1"].clone(),
         out_of_map: false,
     }];
@@ -373,7 +382,7 @@ fn construct_airport() -> Airport {
     }
 }
 
-fn build_airport_map(map_path: &str, spacing: usize) -> Map {
+fn build_airport_map(map_path: &str, spacing: Spacing) -> Map {
     // open the map file
     let map_file = File::open(map_path).expect("Failed to open map file");
 
@@ -428,12 +437,12 @@ fn build_airport_map(map_path: &str, spacing: usize) -> Map {
         }
     }
 
-    // Add spacing of MapPoint::Empty on all sides of map rows
+    // Add spacing of MapPoint::Empty on left/right sides of map rows
     let mut map = map
         .iter()
         .map(|row| {
             let mut row = row.clone();
-            for _ in 0..spacing {
+            for _ in 0..spacing.left_right {
                 row.insert(0, MapPoint::Empty);
                 row.push(MapPoint::Empty);
             }
@@ -441,8 +450,8 @@ fn build_airport_map(map_path: &str, spacing: usize) -> Map {
         })
         .collect::<Vec<Vec<MapPoint>>>();
     // Add spacing num of columns on top and bottom
-    for _ in 0..2 {
-        let mut row = vec![MapPoint::Empty; width + (spacing * 2)];
+    for _ in 0..spacing.top_bottom {
+        let mut row = vec![MapPoint::Empty; width + (spacing.left_right * 2)];
         map.insert(0, row.clone());
         map.push(row);
     }
