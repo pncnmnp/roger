@@ -374,7 +374,7 @@ impl Score {
 fn construct_airport() -> Airport {
     let spacing = Spacing {
         top_bottom: 2,
-        left_right: 5,
+        left_right: 20,
     };
     let map_path = "./src/airport.map";
     let map = build_airport_map(map_path, spacing.clone());
