@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 #[cfg(target_os = "macos")]
 use cocoa_foundation::base::id;
 use cocoa_foundation::foundation::NSDefaultRunLoopMode;
@@ -109,14 +107,12 @@ struct Runway {
 impl Runway {
     pub fn new(map: &Map) -> HashMap<String, Self> {
         let mut runways: HashMap<String, Self> = HashMap::new();
-        for (i, row) in map.map.iter().enumerate() {
-            for (j, col) in row.iter().enumerate() {
+        for row in map.map.iter() {
+            for col in row.iter() {
                 if let MapPoint::Runway((name, side)) = col {
                     let mut is_unique = true;
-                    for runway in &runways {
-                        if runways.contains_key(&name.to_string()) {
-                            is_unique = false;
-                        }
+                    if runways.contains_key(&name.to_string()) {
+                        is_unique = false;
                     }
                     if is_unique {
                         runways.insert(
@@ -136,31 +132,26 @@ impl Runway {
 
 #[derive(Clone, Debug)]
 struct Gate {
-    number: String,
+    _number: String,
     is_occupied: bool,
 }
 
 impl Gate {
     pub fn new(map: &Map) -> HashMap<String, Self> {
         let mut gates: HashMap<String, Self> = HashMap::new();
-        for (i, row) in map.map.iter().enumerate() {
-            for (j, col) in row.iter().enumerate() {
+        for row in map.map.iter() {
+            for col in row.iter() {
                 if let MapPoint::Gate(number) = col {
-                    let mut is_unique = true;
-                    for gate in &gates {
-                        if gates.contains_key(&number.to_string()) {
-                            panic!("Duplicate gate number: {}", number);
-                        }
+                    if gates.contains_key(&number.to_string()) {
+                        panic!("Duplicate gate number: {}", number);
                     }
-                    if is_unique {
-                        gates.insert(
-                            number.to_string(),
-                            Gate {
-                                number: number.clone(),
-                                is_occupied: false,
-                            },
-                        );
-                    }
+                    gates.insert(
+                        number.to_string(),
+                        Gate {
+                            _number: number.clone(),
+                            is_occupied: false,
+                        },
+                    );
                 }
             }
         }
@@ -269,8 +260,8 @@ struct Spacing {
 
 #[derive(Debug)]
 struct Map {
-    length: usize,
-    width: usize,
+    _length: usize,
+    _width: usize,
     spacing: Spacing,
     map: Vec<Vec<MapPoint>>,
 }
@@ -325,19 +316,6 @@ struct Plane {
     out_of_map: bool,
 }
 
-impl Plane {
-    pub fn new(self) -> Self {
-        Self {
-            id: self.id,
-            name: self.name,
-            current_action: self.current_action,
-            position: self.position,
-            runway: self.runway,
-            out_of_map: self.out_of_map,
-        }
-    }
-}
-
 lazy_static! {
     static ref AIRWAY_IDS: HashMap<&'static str, &'static str> = {
         let mut map = HashMap::new();
@@ -369,18 +347,18 @@ struct Time {
     step_duration: usize, // Duration in seconds for each game step
 }
 
-struct GroundAlert {
+struct _GroundAlert {
     message: String,
 }
 
 struct Score {
     takeoff: usize,
-    crash: usize,
+    _crash: usize,
 }
 
 impl Score {
-    pub fn score(self) -> i32 {
-        (self.takeoff - (100 * self.crash)) as i32
+    pub fn _score(self) -> i32 {
+        (self.takeoff - (100 * self._crash)) as i32
     }
 }
 
@@ -474,14 +452,14 @@ fn build_airport_map(map_path: &str, spacing: Spacing) -> Map {
         .collect::<Vec<Vec<MapPoint>>>();
     // Add spacing num of columns on top and bottom
     for _ in 0..spacing.top_bottom {
-        let mut row = vec![MapPoint::Empty; width + (spacing.left_right * 2)];
+        let row = vec![MapPoint::Empty; width + (spacing.left_right * 2)];
         map.insert(0, row.clone());
         map.push(row);
     }
 
     Map {
-        length,
-        width,
+        _length: length,
+        _width: width,
         spacing,
         map,
     }
@@ -490,7 +468,6 @@ fn build_airport_map(map_path: &str, spacing: Spacing) -> Map {
 // Function to update the game state for each time step
 fn update_game_state(
     airport: &mut Airport,
-    time: &Time,
     spawn_plane: bool,
     score: &mut Score,
     receiver: &Receiver<String>,
@@ -567,7 +544,7 @@ fn render(airport: &Airport, score: &Score) {
             if plane_rendered {
                 continue;
             }
-            let mut pixel = match row {
+            let pixel = match row {
                 MapPoint::Empty => " ",
                 MapPoint::Runway((usize, dir)) => match usize {
                     0 => "∥",
@@ -585,7 +562,7 @@ fn render(airport: &Airport, score: &Score) {
                     _ => " ",
                 },
                 MapPoint::Gate(name) => name,
-                MapPoint::GateTaxiLine((terminal, dir)) => match dir {
+                MapPoint::GateTaxiLine((_, dir)) => match dir {
                     Direction::North => "↑",
                     Direction::South => "↓",
                     Direction::East => "→",
@@ -615,7 +592,7 @@ fn render(airport: &Airport, score: &Score) {
     stdout.write_all(b"\r\n\n").unwrap();
 
     // Print out the latest error message
-    if let Ok(mut error) = ERROR.lock() {
+    if let Ok(error) = ERROR.lock() {
         if error.timer.load(Ordering::SeqCst) > 0 {
             stdout
                 .write_all(format!("‼  {}", error.message).as_bytes())
@@ -626,7 +603,7 @@ fn render(airport: &Airport, score: &Score) {
     }
 
     // Print out the latest clearance message
-    if let Ok(mut clearance) = ATC.lock() {
+    if let Ok(clearance) = ATC.lock() {
         if clearance.timer.load(Ordering::SeqCst) > 0 {
             stdout
                 .write_all(format!("🎙  {}", clearance.message).as_bytes())
@@ -699,7 +676,7 @@ fn update_aircraft_position(airport: &mut Airport) {
     {
         match &mut plane.current_action {
             Action::InAir => {
-                let mut plane_dir = Direction::StayPut;
+                let plane_dir;
                 let pos = match plane.runway.side {
                     Direction::West | Direction::East | Direction::North | Direction::South => {
                         plane_dir = plane.runway.side.clone();
@@ -845,7 +822,7 @@ fn update_aircraft_position(airport: &mut Airport) {
                         }
                     }
                     MapPoint::Gate(ref gate) => {
-                        let (is_nearby_gate, mut gate_dir) =
+                        let (is_nearby_gate, gate_dir) =
                             point.clone().check_for_gate_taxi_line_all_directions(
                                 &airport.map,
                                 plane.position,
@@ -860,7 +837,7 @@ fn update_aircraft_position(airport: &mut Airport) {
                     _ => panic!("Plane is not standing at a gate or gate taxi line"),
                 };
             }
-            Action::AtGate((gate, ref mut atgate_action)) => {
+            Action::AtGate((_, ref mut atgate_action)) => {
                 let actions = all::<AtGateAction>().collect::<Vec<_>>();
                 let mut iter = actions.iter();
                 while let Some(action) = iter.next() {
@@ -877,12 +854,12 @@ fn update_aircraft_position(airport: &mut Airport) {
 }
 
 // Function to detect and handle collisions
-fn detect_and_handle_collisions(airport: &mut Airport) {
+fn _detect_and_handle_collisions(_airport: &mut Airport) {
     // Detect and resolve collisions between aircraft
 }
 
 // Function to handle ground staff alerts
-fn handle_ground_alerts(airport: &mut Airport, alert: GroundAlert) {
+fn _handle_ground_alerts(_airport: &mut Airport, _alert: _GroundAlert) {
     // Take appropriate actions in response to ground staff alerts
 }
 
@@ -1035,12 +1012,12 @@ fn create_atc_clearance(airport: &Airport, plane: &Plane) -> String {
             // Find the taxiway closest to the plane's position
             let point: MapPoint = airport.map.map[plane.position.0][plane.position.1].clone();
             let taxiway = match point {
-                MapPoint::Taxiway((num, dir)) => num,
+                MapPoint::Taxiway((num, _)) => num,
                 MapPoint::Runway((_, dir)) => {
                     let next = dir.go(plane.position);
                     let next_point = airport.map.map[next.0][next.1].clone();
                     match next_point {
-                        MapPoint::Taxiway((num, dir)) => num,
+                        MapPoint::Taxiway((num, _)) => num,
                         _ => 0,
                     }
                 }
@@ -1171,7 +1148,7 @@ fn main() {
     const LANDING_INTERVAL: usize = 60;
     let mut score = Score {
         takeoff: 0,
-        crash: 0,
+        _crash: 0,
     };
 
     // Channel for communication between threads
@@ -1188,14 +1165,7 @@ fn main() {
     let mut timer: usize = 0;
     loop {
         let spawn_plane = timer % LANDING_INTERVAL == 0;
-        update_game_state(
-            &mut airport,
-            &time,
-            spawn_plane,
-            &mut score,
-            &receiver,
-            &mut tts,
-        );
+        update_game_state(&mut airport, spawn_plane, &mut score, &receiver, &mut tts);
         // Sleep for a bit
         thread::sleep(Duration::from_secs(time.step_duration as u64));
         timer += 1;
