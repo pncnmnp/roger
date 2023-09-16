@@ -10,6 +10,7 @@ enum-iterator = "1.4.1"
 clap = { version = "4.4.2", features = ["derive"] }
 lazy_static = "1.4.0"
 rand = "0.8.5"
+rand_distr = "0.4.3"
 tts = "0.25.6"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
