@@ -10,6 +10,7 @@ use objc::{msg_send, sel, sel_impl};
 use clap::{ArgAction, Parser};
 use enum_iterator::{all, Sequence};
 use lazy_static::lazy_static;
+use rand::seq::SliceRandom;
 use rand::Rng;
 use std::io::{self, stdout, Write};
 use std::net::{TcpListener, TcpStream};
@@ -132,15 +133,16 @@ impl Runway {
 
 #[derive(Clone, Debug)]
 struct Gate {
-    _number: String,
+    number: String,
+    position: (usize, usize),
     is_occupied: bool,
 }
 
 impl Gate {
     pub fn new(map: &Map) -> HashMap<String, Self> {
         let mut gates: HashMap<String, Self> = HashMap::new();
-        for row in map.map.iter() {
-            for col in row.iter() {
+        for (row_num, row) in map.map.iter().enumerate() {
+            for (col_num, col) in row.iter().enumerate() {
                 if let MapPoint::Gate(number) = col {
                     if gates.contains_key(&number.to_string()) {
                         panic!("Duplicate gate number: {}", number);
@@ -148,7 +150,8 @@ impl Gate {
                     gates.insert(
                         number.to_string(),
                         Gate {
-                            _number: number.clone(),
+                            number: number.clone(),
+                            position: (row_num, col_num),
                             is_occupied: false,
                         },
                     );
@@ -479,7 +482,7 @@ fn update_game_state(
     update_score(airport, score);
     simulate_weather(airport);
     if spawn_plane {
-        spawn_landing_aircraft(airport);
+        spawn_landing_aircraft(airport, false);
     }
     render(airport, score);
     detect_and_handle_collisions(airport, score);
@@ -1109,7 +1112,7 @@ fn simulate_weather(airport: &mut Airport) {
     };
 }
 
-fn spawn_landing_aircraft(airport: &mut Airport) {
+fn spawn_landing_aircraft(airport: &mut Airport, at_gate: bool) {
     // Spawn new aircraft for landing
     let spacing = &airport.map.spacing;
     let runways = &airport.runways;
@@ -1120,11 +1123,28 @@ fn spawn_landing_aircraft(airport: &mut Airport) {
     let plane_name = airway_ids[rng.gen_range(0..airway_ids.len())].to_string()
         + &rng.gen_range(100..400).to_string();
 
+    let (position, current_action) = match at_gate {
+        true => {
+            let random_gate = airport
+                .gates
+                .values()
+                .collect::<Vec<_>>()
+                .choose(&mut rand::thread_rng())
+                .unwrap()
+                .to_owned();
+            (
+                random_gate.position,
+                Action::AtGate((random_gate.number.clone(), AtGateAction::Standby)),
+            )
+        }
+        false => ((spacing.top_bottom, 0), Action::InAir),
+    };
+
     let plane = Plane {
         id: num_planes + 1,
         name: plane_name,
-        current_action: Action::InAir,
-        position: (spacing.top_bottom, 0),
+        current_action,
+        position,
         runway: runways["1"].clone(),
         out_of_map: false,
     };
@@ -1189,6 +1209,9 @@ fn main() {
 
     // TTS
     let mut tts = Tts::default().expect("Could not initialize TTS");
+
+    // Spawn the first aircraft at a gate
+    spawn_landing_aircraft(&mut airport, true);
 
     let mut timer: usize = 0;
     loop {
