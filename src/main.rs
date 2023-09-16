@@ -51,6 +51,13 @@ lazy_static! {
         timer: AtomicUsize::new(0),
     });
 }
+// Message from Airport Operations Center
+lazy_static! {
+    static ref AOC: Mutex<Message> = Mutex::new(Message {
+        message: String::new(),
+        timer: AtomicUsize::new(0),
+    });
+}
 
 #[derive(Clone, PartialEq, Debug)]
 enum Direction {
@@ -269,7 +276,7 @@ struct Map {
     map: Vec<Vec<MapPoint>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum WeatherCondition {
     Clear,
     Rain,
@@ -616,6 +623,16 @@ fn render(airport: &Airport, score: &Score) {
         }
     }
 
+    // Print out the message from Airport Operations Center (AOC) if any
+    if let Ok(aoc) = AOC.lock() {
+        if aoc.message.len() > 0 {
+            stdout
+                .write_all(format!("\n{}", aoc.message).as_bytes())
+                .unwrap();
+            stdout.write_all(b"\r\n").unwrap();
+        }
+    }
+
     // Flush the output buffer to ensure that the output is immediately displayed
     stdout.flush().unwrap();
 }
@@ -626,7 +643,12 @@ fn update_aircraft_from_user_input(
     tts: &mut Tts,
 ) {
     if let Ok(user_input) = receiver.try_recv() {
-        let plane = parse_user_input(user_input, &airport.planes, &airport.runways);
+        let plane = parse_user_input(
+            user_input,
+            &airport.planes,
+            &airport.runways,
+            &airport.weather,
+        );
         if plane.is_ok() {
             let keep_aside_fleet = airport.planes.clone();
             let plane = plane.unwrap();
@@ -899,6 +921,7 @@ fn parse_user_input(
     command: String,
     planes: &Vec<Plane>,
     runways: &HashMap<String, Runway>,
+    weather: &WeatherCondition,
 ) -> Result<Plane, String> {
     /*
         Language is:
@@ -962,7 +985,7 @@ fn parse_user_input(
         Land: -
         HoldPosition: TaxiToGate (after landing), TaxiToRunway, HoldShort, TaxiOntoRunway
         Pushback: -
-        TaxiOntoRunway: HoldPosition, HoldShort, Takeoff, TaxiToRunway
+        TaxiOntoRunway: HoldPosition, HoldShort, Takeoff, TaxiToRunway, TaxiToGate
         HoldShort: HoldPosition, TaxiOntoRunway, Takeoff, TaxiToRunway
         TaxiToGate: HoldPosition
         Takeoff: -
@@ -981,13 +1004,30 @@ fn parse_user_input(
             }
         },
         Action::TaxiOntoRunway(_) => match action {
-            Action::HoldPosition | Action::HoldShort | Action::Takeoff => {}
+            // Need TaxiToGate during emergency situations
+            Action::HoldPosition | Action::HoldShort | Action::TaxiToGate(_) => {}
+            Action::Takeoff => {
+                if weather == &WeatherCondition::InclementWeather {
+                    return Err(
+                        "Cannot takeoff during inclement weather, return back to the gate"
+                            .to_string(),
+                    );
+                }
+            }
             _ => {
                 return Err("Not a valid action when taxiing onto runway".to_string());
             }
         },
         Action::HoldShort => match action {
-            Action::HoldPosition | Action::TaxiOntoRunway(_) | Action::Takeoff => {}
+            Action::HoldPosition | Action::TaxiOntoRunway(_) => {}
+            Action::Takeoff => {
+                if weather == &WeatherCondition::InclementWeather {
+                    return Err(
+                        "Cannot takeoff during inclement weather, return back to the gate"
+                            .to_string(),
+                    );
+                }
+            }
             _ => {
                 return Err("Not a valid action when holding short".to_string());
             }
@@ -1005,6 +1045,9 @@ fn parse_user_input(
             Action::Pushback => {
                 if at_gate_action != AtGateAction::Standby {
                     return Err("Wait for the plane to finish its turnaround process".to_string());
+                }
+                if weather == &WeatherCondition::InclementWeather {
+                    return Err("Cannot pushback during inclement weather".to_string());
                 }
             }
             _ => {
@@ -1095,6 +1138,19 @@ fn simulate_weather(airport: &mut Airport) {
             if rng.gen_range(0..300) <= 1 {
                 WeatherCondition::Rain
             } else if rng.gen_range(0..1000) <= 1 {
+                let inclement_weather = "⚠️  Airport Operations Center (AOC): \n\
+                    Attention all passengers and crew, \
+                    due to the current severe weather conditions, \
+                    all departing flights have been temporarily halted for passenger safety. \
+                    Incoming flights that are close to landing will proceed as scheduled. \
+                    We appreciate your understanding and cooperation. \
+                    Please stay tuned to the flight information displays \
+                    and airport announcements for further updates. \
+                    We sincerely apologize for any inconvenience caused. \
+                    Your safety is our top priority. Thank you.";
+                if let Ok(mut aoc) = AOC.lock() {
+                    aoc.message = inclement_weather.to_owned();
+                }
                 WeatherCondition::InclementWeather
             } else {
                 WeatherCondition::Clear
@@ -1108,9 +1164,13 @@ fn simulate_weather(airport: &mut Airport) {
             }
         }
         WeatherCondition::InclementWeather => {
-            if rng.gen_range(0..100) < 95 {
+            if rng.gen_range(0..100) < 98 {
                 WeatherCondition::InclementWeather
             } else {
+                // No more inclement weather alert
+                if let Ok(mut aoc) = AOC.lock() {
+                    aoc.message = String::new();
+                }
                 WeatherCondition::Clear
             }
         }
