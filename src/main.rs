@@ -762,6 +762,7 @@ fn update_aircraft_position(airport: &mut Airport) {
                                 Action::AtGate((gate.clone(), AtGateAction::ShutdownProcedure));
                             Direction::StayPut
                         }
+                        MapPoint::Runway((_, dir)) => dir,
                         _ => panic!("Plane is not standing on a taxiway or correct gate"),
                     };
                     plane.position = dir.go(plane.position);
@@ -965,7 +966,7 @@ fn parse_user_input(
         HoldShort: HoldPosition, TaxiOntoRunway, Takeoff, TaxiToRunway
         TaxiToGate: HoldPosition
         Takeoff: -
-        AtGate: Pushback
+        AtGate: Pushback (only when on standby)
     */
     match plane.current_action {
         Action::InAir => return Err("Not a valid action when plane is in the air".to_string()),
@@ -1000,8 +1001,12 @@ fn parse_user_input(
         Action::Pushback => {
             return Err("Not a valid action when in the process of pushback".to_string())
         }
-        Action::AtGate(_) => match action {
-            Action::Pushback => {}
+        Action::AtGate((_, at_gate_action)) => match action {
+            Action::Pushback => {
+                if at_gate_action != AtGateAction::Standby {
+                    return Err("Wait for the plane to finish its turnaround process".to_string());
+                }
+            }
             _ => {
                 return Err("Not a valid action when at gate".to_string());
             }
