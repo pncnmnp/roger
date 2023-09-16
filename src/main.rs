@@ -353,12 +353,12 @@ struct _GroundAlert {
 
 struct Score {
     takeoff: usize,
-    _crash: usize,
+    crash: usize,
 }
 
 impl Score {
     pub fn _score(self) -> i32 {
-        (self.takeoff - (100 * self._crash)) as i32
+        (self.takeoff - (100 * self.crash)) as i32
     }
 }
 
@@ -475,7 +475,6 @@ fn update_game_state(
 ) {
     update_aircraft_position(airport);
     update_aircraft_from_user_input(airport, receiver, tts);
-    // Detect collisions
     // Signal alerts
     update_score(airport, score);
     simulate_weather(airport);
@@ -483,6 +482,7 @@ fn update_game_state(
         spawn_landing_aircraft(airport);
     }
     render(airport, score);
+    detect_and_handle_collisions(airport, score);
 }
 
 fn render(airport: &Airport, score: &Score) {
@@ -854,8 +854,36 @@ fn update_aircraft_position(airport: &mut Airport) {
 }
 
 // Function to detect and handle collisions
-fn _detect_and_handle_collisions(_airport: &mut Airport) {
-    // Detect and resolve collisions between aircraft
+fn detect_and_handle_collisions(airport: &mut Airport, score: &mut Score) {
+    let fleet = airport.planes.clone();
+    let mut crashed_planes = None;
+    for (i, plane) in fleet.iter().enumerate() {
+        for another_plane in fleet.iter().skip(i + 1) {
+            if plane.position == another_plane.position {
+                crashed_planes = Some((plane, another_plane));
+                break;
+            }
+        }
+    }
+
+    // Take appropriate actions in response to collisions
+    if crashed_planes.is_some() {
+        let (plane1, plane2) = crashed_planes.unwrap();
+        let mut stdout = stdout();
+        let collision_message = format!(
+            "🎧 Attention, Air Traffic Control, this is Ground Operations. \
+            We have a Code 34 incident on the tarmac involving aircraft {} and {}. \
+            Two aircraft have come into contact. \
+            Emergency services have been alerted and are en route. \
+            All ground movement is currently halted. \
+            Please hold all departures and redirect incoming traffic to alternate taxiways. \
+            We will update as more information becomes available. Over.",
+            plane1.name, plane2.name
+        );
+        stdout.write_all(collision_message.as_bytes()).unwrap();
+
+        score.crash += 1;
+    }
 }
 
 // Function to handle ground staff alerts
@@ -1148,7 +1176,7 @@ fn main() {
     const LANDING_INTERVAL: usize = 60;
     let mut score = Score {
         takeoff: 0,
-        _crash: 0,
+        crash: 0,
     };
 
     // Channel for communication between threads
@@ -1169,5 +1197,8 @@ fn main() {
         // Sleep for a bit
         thread::sleep(Duration::from_secs(time.step_duration as u64));
         timer += 1;
+        if score.crash > 0 {
+            break;
+        }
     }
 }
