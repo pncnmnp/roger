@@ -12,6 +12,7 @@ use enum_iterator::{all, Sequence};
 use lazy_static::lazy_static;
 use rand::seq::SliceRandom;
 use rand::Rng;
+use rand_distr::{Distribution, Normal};
 use std::io::{self, stdout, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -283,6 +284,13 @@ enum WeatherCondition {
     InclementWeather,
 }
 
+#[derive(Debug)]
+struct Weather {
+    condition: WeatherCondition,
+    wind_direction: usize, // 0-360 degrees
+    wind_speed: f64,       // 0-60 knots
+}
+
 #[derive(Debug, Clone, Sequence, PartialEq)]
 enum AtGateAction {
     ShutdownProcedure,
@@ -349,7 +357,7 @@ struct Airport {
     runways: HashMap<String, Runway>,
     gates: HashMap<String, Gate>,
     map: Map,
-    weather: WeatherCondition,
+    weather: Weather,
     planes: Vec<Plane>,
 }
 
@@ -382,7 +390,12 @@ fn construct_airport() -> Airport {
 
     let runways = Runway::new(&map);
     let gates = Gate::new(&map);
-    let weather = WeatherCondition::Clear;
+    let mut weather = Weather {
+        condition: WeatherCondition::Clear,
+        wind_direction: 360,
+        wind_speed: 0.0,
+    };
+    simulate_wind_direction_and_speed(&mut weather, 100);
 
     Airport {
         runways,
@@ -504,11 +517,12 @@ fn render(airport: &Airport, score: &Score) {
     stdout.write_all(b"\x1B[1;1H").unwrap();
 
     // Print the dashboard
+    let weather = format!("{:?}", airport.weather.condition);
     stdout
         .write_all(
             format!(
-                "Takeoffs: {} \t Weather: {:?}\n",
-                score.takeoff, airport.weather
+                "Takeoffs: {:<5} Weather: {:<20} Wind Direction: {}'   Wind Speed: {:.2} kn\n",
+                score.takeoff, weather, airport.weather.wind_direction, airport.weather.wind_speed
             )
             .as_bytes(),
         )
@@ -921,7 +935,7 @@ fn parse_user_input(
     command: String,
     planes: &Vec<Plane>,
     runways: &HashMap<String, Runway>,
-    weather: &WeatherCondition,
+    weather: &Weather,
 ) -> Result<Plane, String> {
     /*
         Language is:
@@ -1007,7 +1021,7 @@ fn parse_user_input(
             // Need TaxiToGate during emergency situations
             Action::HoldPosition | Action::HoldShort | Action::TaxiToGate(_) => {}
             Action::Takeoff => {
-                if weather == &WeatherCondition::InclementWeather {
+                if weather.condition == WeatherCondition::InclementWeather {
                     return Err(
                         "Cannot takeoff during inclement weather, return back to the gate"
                             .to_string(),
@@ -1021,7 +1035,7 @@ fn parse_user_input(
         Action::HoldShort => match action {
             Action::HoldPosition | Action::TaxiOntoRunway(_) => {}
             Action::Takeoff => {
-                if weather == &WeatherCondition::InclementWeather {
+                if weather.condition == WeatherCondition::InclementWeather {
                     return Err(
                         "Cannot takeoff during inclement weather, return back to the gate"
                             .to_string(),
@@ -1046,7 +1060,7 @@ fn parse_user_input(
                 if at_gate_action != AtGateAction::Standby {
                     return Err("Wait for the plane to finish its turnaround process".to_string());
                 }
-                if weather == &WeatherCondition::InclementWeather {
+                if weather.condition == WeatherCondition::InclementWeather {
                     return Err("Cannot pushback during inclement weather".to_string());
                 }
             }
@@ -1069,10 +1083,16 @@ fn create_atc_clearance(airport: &Airport, plane: &Plane) -> String {
             "{} {}, you are cleared to land on runway {}.",
             name, code, plane.runway.name
         ),
-        Action::Takeoff => format!(
-            "{} {}, you are cleared for takeoff, runway {}.",
-            name, code, plane.runway.name
-        ),
+        Action::Takeoff => {
+            format!(
+                "{} {}, you are cleared for takeoff, runway {}. Conditions {:.2} at {} knots.",
+                name,
+                code,
+                plane.runway.name,
+                airport.weather.wind_direction,
+                airport.weather.wind_speed as usize
+            )
+        }
         Action::HoldPosition => format!("{} {}, hold position, traffic crossing.", name, code),
         Action::Pushback => format!(
             "{} {}, pushback approved, expect runway {} for departure.",
@@ -1133,7 +1153,7 @@ fn update_score(airport: &mut Airport, score: &mut Score) {
 // Function to simulate weather conditions
 fn simulate_weather(airport: &mut Airport) {
     let mut rng = rand::thread_rng();
-    airport.weather = match airport.weather {
+    airport.weather.condition = match airport.weather.condition {
         WeatherCondition::Clear => {
             if rng.gen_range(0..300) <= 1 {
                 WeatherCondition::Rain
@@ -1175,6 +1195,45 @@ fn simulate_weather(airport: &mut Airport) {
             }
         }
     };
+    simulate_wind_direction_and_speed(&mut airport.weather, 10);
+}
+
+fn simulate_wind_direction_and_speed(weather: &mut Weather, prob: usize) {
+    let mut rng = rand::thread_rng();
+    if rng.gen_range(0..100) < prob {
+        weather.wind_speed = match weather.condition {
+            WeatherCondition::Clear => {
+                let normal = Normal::new(10.0, 1.0).unwrap();
+                let mut s = normal.sample(&mut rand::thread_rng());
+                s = if s < 0.0 && s > 20.0 { 20.0 } else { s };
+                s
+            }
+            WeatherCondition::Rain => {
+                let normal = Normal::new(30.0, 5.0).unwrap();
+                let mut s = normal.sample(&mut rand::thread_rng());
+                s = if s < 20.0 && s > 40.0 { 40.0 } else { s };
+                s
+            }
+            WeatherCondition::InclementWeather => {
+                let normal = Normal::new(50.0, 10.0).unwrap();
+                let mut s = normal.sample(&mut rand::thread_rng());
+                s = if s < 50.0 && s > 60.0 { 60.0 } else { s };
+                s
+            }
+        };
+    }
+
+    if prob == 100 || rng.gen_range(0..100) < 5 {
+        let normal_wind_direction = Normal::new(weather.wind_direction as f64, 20.0).unwrap();
+        let dir = normal_wind_direction.sample(&mut rand::thread_rng());
+        weather.wind_direction = if dir > 360.0 {
+            f64::min(dir - 360.0, 360.0)
+        } else if dir < 0.0 {
+            f64::max(dir + 360.0, 0.0)
+        } else {
+            dir
+        } as usize;
+    }
 }
 
 fn spawn_landing_aircraft(airport: &mut Airport, at_gate: bool) {
