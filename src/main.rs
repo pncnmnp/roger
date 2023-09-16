@@ -201,6 +201,25 @@ impl MapPoint {
         }
     }
 
+    fn check_for_taxiway(self, map: &Map, position: (usize, usize)) -> (bool, Direction) {
+        // Search all directions for a taxiway
+        for direction in vec![
+            Direction::North,
+            Direction::South,
+            Direction::East,
+            Direction::West,
+        ] {
+            if direction
+                .to_owned()
+                .fetch_mappoint(map, position)
+                .check_if_taxiway()
+            {
+                return (true, direction);
+            }
+        }
+        (false, Direction::StayPut)
+    }
+
     fn check_for_gate_taxi_line(
         self,
         map: &Map,
@@ -737,7 +756,34 @@ fn update_aircraft_position(airport: &mut Airport) {
                 let pos = match plane.runway.side {
                     Direction::West | Direction::East | Direction::North | Direction::South => {
                         let plane_dir = plane.runway.side.clone();
-                        let pos = plane_dir.to_owned().go(plane.position);
+                        // Check if plane has a nearby taxiway
+                        let (nearby_taxiway, taxiway_dir) = plane_dir
+                            .to_owned()
+                            .fetch_mappoint(&airport.map, plane.position)
+                            .to_owned()
+                            .check_for_taxiway(&airport.map, plane.position);
+                        let mut pos = plane_dir.to_owned().go(plane.position);
+                        if nearby_taxiway {
+                            // Only stop if the direction is outward facing
+                            // i.e. if we take that direction, and follow the path at that point,
+                            // we should not end up on a runway
+                            let mut outward_facing = false;
+                            let potential_map_point = taxiway_dir
+                                .to_owned()
+                                .fetch_mappoint(&airport.map, plane.position);
+                            let potential_point = taxiway_dir.go(plane.position);
+                            if let MapPoint::Taxiway((_, dir)) = potential_map_point {
+                                if let MapPoint::Runway(_) =
+                                    dir.fetch_mappoint(&airport.map, potential_point)
+                                {
+                                    outward_facing = true;
+                                }
+                            }
+                            if !outward_facing {
+                                pos = potential_point;
+                                plane.current_action = Action::HoldPosition;
+                            }
+                        }
                         // Check if plane has reached the end of the runway
                         if plane_dir.fetch_mappoint(&airport.map, pos) == MapPoint::Empty {
                             plane.current_action = Action::HoldPosition;
