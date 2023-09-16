@@ -8,6 +8,7 @@ Roger is an ATC simulator written in Rust.
 Generally, ATC simulators simulate ground-based traffic or radar-based traffic.
 This simulator focuses on ground-based traffic.
 You can direct the traffic to the gates and prepare them for takeoff.
+
 Real-world scenarios, like inclement weather, emergencies, and runway incursions, are planned to be added to make it more realistic.
 
 # How to Run?
@@ -24,7 +25,7 @@ Then, split your terminal into two vertical panes. On either one of them, run th
 ./target/debug/atc
 ```
 
-This runs the ATC commands.
+This is used to enter the ATC commands.
 
 On the next pane, run the simulator window using the command:
 
