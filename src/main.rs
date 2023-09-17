@@ -945,7 +945,11 @@ fn detect_and_handle_collisions(airport: &mut Airport, score: &mut Score) {
     let mut crashed_planes = None;
     for (i, plane) in fleet.iter().enumerate() {
         for another_plane in fleet.iter().skip(i + 1) {
-            if plane.position == another_plane.position && plane.id != another_plane.id {
+            if plane.position == another_plane.position
+                && plane.id != another_plane.id
+                && plane.out_of_map == false
+                && another_plane.out_of_map == false
+            {
                 crashed_planes = Some((plane, another_plane));
                 break;
             }
