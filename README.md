@@ -54,3 +54,4 @@ This displays the airport map and the relevant dashboards.
 # License
 
 This simulator is licensed under the [GNU General Public License v3.0](https://github.com/pncnmnp/roger/blob/master/LICENSE).
+The Logo was generated using Open AI's Dall-E 2.
